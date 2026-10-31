@@ -32,3 +32,7 @@
 @media(max-width:650px){.profile-heading{align-items:flex-start;gap:16px}.profile-heading .portrait{width:76px;height:76px}.profile-heading h1{font-size:26px}.profile-heading .eyebrow{font-size:10px}}
 
 .masthead{justify-content:flex-end}
+
+.article img{display:block;max-width:100%;height:auto;margin:24px auto}.article code{font-size:.85em}.section .entry-title + .entry-title{margin-top:20px}
+
+.signup-trap{position:absolute;left:-5000px}.signup button{cursor:pointer}.signup button:hover{background:#d3d6c6}.signup button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
