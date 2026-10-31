@@ -23,11 +23,12 @@ Before publishing, review the draft, review the résumé-based biography, add a 
 
 This site works as a static GitHub Pages site, including at a project URL such as `https://USERNAME.github.io/REPOSITORY/`. All internal URLs are relative, including article stylesheets and the portrait.
 
-The deployment workflow is at `../.github/workflows/pages.yml`. Keep the current layout when pushing to GitHub: `.github/` and `site/` must be siblings at the repository root. The workflow publishes the contents of `site/`, with `index.html` at the published root. No build or Jekyll processing is needed.
+The Git repository is rooted in this `site/` directory. The deployment workflow is `.github/workflows/pages.yml` inside it and publishes the repository root. No build or Jekyll processing is needed. The older workflow in the parent directory is outside this Git repository and is not used.
 
+For the custom domain, set **Settings → Pages → Custom domain** to `jasondeutsch.com`. The homepage should then be `https://jasondeutsch.com/`, without `/site/`. The tracked `CNAME` also preserves this domain when publishing directly from a branch; Actions deployments use the repository’s Pages settings.
 1. Push this project to a GitHub repository.
 2. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the source.
-3. Under **Actions**, run **Publish website to GitHub Pages** on the default branch, or push a change to `site/` on that branch.
+3. Under **Actions**, run **Publish website to GitHub Pages** on the default branch, or push a change on that branch.
 4. The completed deployment shows the published URL in the `github-pages` environment.
 
-Only the default branch can deploy. Subsequent changes under `site/` trigger deployment automatically. Newsletter signup uses a standard HTML POST to Mailchimp, so it works on GitHub Pages without a backend or API key. Mailchimp handles signup responses in a new tab. Double opt-in must be configured in Mailchimp; it cannot be determined from the embed code.
+Only the default branch can deploy. Subsequent changes trigger deployment automatically. Newsletter signup uses a standard HTML POST to Mailchimp, so it works on GitHub Pages without a backend or API key. Mailchimp handles signup responses in a new tab. Double opt-in must be configured in Mailchimp; it cannot be determined from the embed code.
