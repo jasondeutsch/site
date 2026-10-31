@@ -1,0 +1,50 @@
+# The AI-induced velocity trap
+
+Jason Deutsch
+
+AI engineering needs a rigorous process strategy on both sides of development. Before coding, teams must establish what to build and resolve consequential design decisions. After coding, they must review, integrate, test, and determine whether the result helps users.
+
+Without that strategy, faster coding can simply redistribute the time burden, or increase it. Unresolved requirements become implementation assumptions. Those assumptions become review and testing work. Corrections consume the original saving, while the organization pays an additional bill for AI tools, model usage, and their supporting infrastructure.
+
+That is the velocity trap: little or negative improvement in complete delivery, purchased at a higher operating cost. My assessment is that organizations adopting AI without redesigning the surrounding process should expect this failure mode. Establishing how often it occurs, and how costly it is, requires measurements across the full lifecycle.
+
+Moving judgment upstream can be a sign of engineering maturity. Architects and structural engineers prepare reviewed plans before construction begins; consequential field changes go through accountable review. Software needs comparable discipline as execution becomes easier to automate. The failure is letting tools redistribute responsibility without deliberately designing the process around it. 
+
+## Key points
+
+- AI adoption requires deliberate improvement before and after coding.
+- Faster generation can transfer effort into clarification, review, testing, and rework instead of removing it.
+- When those costs consume the coding savings, the organization gets little or negative delivery gain and an additional AI bill.
+- Measure complete delivery, total cost, and user outcomes before claiming a productivity improvement.
+
+## A finished ticket can contain unfinished thinking
+
+Consider a stakeholder using Claude to turn an idea into a Linear issue. The output includes business rules, implementation steps, and acceptance criteria. It looks ready for engineering.
+
+But who checked the rules? Which came from customers, and which did the model invent?
+
+A polished document can carry proposed decisions into implementation as if someone had approved them. Research offers a reason to examine that risk: a survey of 319 knowledge workers found that greater confidence in generative AI was associated with less reported critical thinking. It did not establish that AI causes poor requirements, but it reinforces the need for deliberate verification. [Lee et al., 2025](https://doi.org/10.1145/3706598.3713778).
+
+## The unanswered questions reach QA
+
+Suppose a ticket says customers can cancel a scheduled operation immediately. It leaves out what happens once execution begins, whether cancellation can be retried, and who has permission.
+
+Engineering makes assumptions. Tests confirm those assumptions. QA eventually exposes the missing decisions, and the team revisits code, tests, and documentation.
+
+The drafting was fast. The uncertainty remained. More work now depends on resolving it. Increasing the volume of generated code can enlarge that burden before reviewers and QA have cleared the previous work.
+
+This is the velocity trap: artifact production accelerates while the delivery system absorbs the unresolved work. Ticket counts and pull requests can rise without a corresponding improvement in usable software. The SPACE framework cautions against treating activity counts as sufficient measures of developer productivity. [Forsgren et al., 2021](https://www.microsoft.com/en-us/research/publication/the-space-of-developer-productivity-theres-more-to-it-than-you-think/).
+
+AI can deliver real implementation gains. One controlled study reported 55.8% faster completion of a prescribed JavaScript task with Copilot. That result does not establish the same gain across discovery, review, integration, and release. The saving has to survive those stages and justify the added expenditure. [Peng et al., 2023](https://arxiv.org/abs/2302.06590).
+
+## Make the shift intentional
+
+Before implementation, establish the user problem, consequential business rules, testable behavior, and a person accountable for unresolved decisions. After implementation, provide review capacity, reliable validation, and a clear path for resolving defects and changed assumptions. Keep the rigor proportionate to the risk.
+
+This is the useful lesson from blueprints: a plan earns authority through analysis, coordination, and review. Generating more detail does not supply those controls.
+
+Then close the loop with users. Decide what evidence would justify expanding, changing, or removing the feature. Controlled experiments can assess impact where appropriate; other changes need interviews, limited rollouts, or operational observation. [Kohavi et al., 2009](https://www.microsoft.com/en-us/research/publication/online-experimentation-at-microsoft/).
+
+The financial assessment must include licenses, model consumption, integration and platform operation, plus the human effort spent reviewing and correcting the output. These costs vary by implementation; they belong in the same assessment as the claimed time savings.
+
+Measure complete delivery time, rework, quality, total cost, and user impact. Moving responsibility upstream is engineering maturity when supported by a deliberate operating model. Accelerating coding while leaving both ends of the process unmanaged risks buying a more expensive way to deliver the same work, or less.
