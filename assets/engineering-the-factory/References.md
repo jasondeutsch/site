@@ -2,6 +2,18 @@
 
 Gathered October 4, 2026.
 
+## Personal project revision — November 1, 2026
+
+Reviewed the collection of repositories at `/Users/j/pragma` at the author's direction. Added an explicit higher-abstraction thesis and provisional author perspective. No new product tests or factory executions were run. Historical failures are not asserted to persist in the current implementation.
+
+- [October 29 GO-001 assessment](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>): observed design corrections, publication-readiness errors, completed workflow, token accounting, and evaluation limitations. Product correctness was reviewer-reported; the operator did not independently run product checks. No dollar-cost or causal efficiency claim is supported.
+- [October 31 GO-001 assessment](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261031-145233-git-hooks/assessment.md>): cancelled workflow after artifact-schema mismatch and misleading retry advice. Supports a handoff/recovery lesson, not a product-quality judgment.
+- [Controls README](</Users/j/pragma/controls/README.md>) and [execution contract](</Users/j/pragma/controls/docs/execution-contract.md>): implemented routing and completion responsibilities, current host-execution limits, and distinctions between implemented behavior and design targets.
+- [Registry README](</Users/j/pragma/registry/README.md>): reusable skills/packages and optional deterministic Git lifecycle utilities. Documentation review supports architecture descriptions, not measured operational effectiveness.
+- [Evals README](</Users/j/pragma/evals/README.md>): current evaluation methodology distinguishes workflow completion from independent acceptance checks. The historical October run limitations are retained; newer harness capabilities do not retroactively validate those results.
+
+Local links preserve traceability inside the vault. Before publication, replace them with reviewed public reports or stable repository permalinks. Raw runtime logs have not been included or published. Existing figures remain conceptual; they are not measurements of the personal project.
+
 ## Outline reviewed
 
 Source: [outline.md](writing/eng/posts/engineering%20the%20factory/outline.md)

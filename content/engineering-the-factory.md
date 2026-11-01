@@ -1,11 +1,20 @@
 # Engineering the software factory
 
+Jason Deutsch
+
+Building my own software factory is changing how I think about the engineer's job. I see it moving toward a higher level of abstraction: defining the production system that turns intent into working software, deciding what evidence makes its output acceptable, and improving that system when it fails.
+
+The engineering responsibility grows with the scope of delegation. A person who writes a function reasons about its behavior. A person who designs a workflow that produces many changes must also reason about its inputs, permissions, failure paths, and the consequences of accepting its output. The implementation still matters; more of the engineer's attention moves to the conditions under which it is produced and trusted.
+
+This article is my current working model, informed by building the control plane, reusable agent packages, and evaluation tooling in my own project. My positions will change as I learn from the project and as the industry's understanding develops. The recommendations below are design judgments to test, rather than a settled blueprint for every organization.
+
 ![Article topic map summarizing the main topics and practical decisions.](writing/eng/posts/engineering%20the%20factory/images/article-overview.png)
 
 [Figure notes](writing/eng/posts/engineering%20the%20factory/images/Figure%20sources.md)
 
 ## Key points
 
+- Software factory engineering moves more of our work toward specifications, interfaces, verification, and the behavior of the production system itself.
 - Start with a repeated delivery problem and define the system's responsibilities before choosing an agent framework.
 - Specifications should state intended behavior and the evidence required to accept a change.
 - Context needs ownership and freshness; larger prompts aren't a substitute for reliable information.
@@ -13,7 +22,19 @@
 - Verification, controlled delivery, and human intervention need to be designed together.
 - Measure the cost of accepted changes and failures across the process.
 
-Building a software factory means taking responsibility for what happens between a request and a maintained production change. Choosing a model is one decision inside that job. It doesn't tell you how the system should handle conflicting requirements, failed checks, or a release that needs to be stopped.
+## What building it has changed
+
+The project has made the work around generation much more concrete. I am engineering completion contracts, review handoffs, execution state, and the evidence needed to assess a run. Those concerns determine whether generated work can move through a dependable process.
+
+One October 29 evaluation illustrates the value of design review. The architecture reviewer caught ambiguity about an absent HTTP header and the loss of strict JSON validation in the proposed plan. The author revised the design, and the reviewer checked the corrections using stable finding identifiers. The useful output was a corrected contract before implementation depended on it. The workflow completed, but product checks were reviewer-reported; the operator did not independently test the product. [Project run assessment, October 29](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>).
+
+A later run exposed a different boundary. The architect produced its documents but repeatedly failed to submit an accepted completion result: one side sent artifact strings while the controller expected objects. The controller then mislabeled the validation error as temporary unavailability and advised a retry. The workflow was eventually cancelled. Documents existed, but the production system could not accept the handoff. That failure directs attention to schema compatibility, error classification, and recovery behavior. It is an observation about that run, not a claim that the same defect remains in today's implementation. [Project run assessment, October 31](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261031-145233-git-hooks/assessment.md>).
+
+The October 29 run also recorded reviewers attempting to read documents before publication. Starting agents concurrently had introduced a coordination obligation: consumers needed to know when usable inputs existed. Concurrency has to earn its place through the dependencies it can actually respect. [Project run assessment, remaining issues](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>).
+
+Cost accounting needs the same care. That run reported about 2.74 million tokens, most of them cached input. Its dollar cost was unknown. The reported token total fell relative to the preceding run, but runtime, skills, and instructions had changed; a single comparison cannot identify the cause or establish an efficiency gain. I need repeatable evaluation and trustworthy accounting before claiming that the factory saves money. [Project run assessment, usage](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>).
+
+Building a software factory means taking responsibility for what happens between a request and a maintained production change. Choosing a model is one decision inside that job. The engineer still has to determine how the system handles conflicting requirements, failed checks, or a release that needs to be stopped.
 
 A useful first version can be small. Take one repeated class of work, define its boundary, and engineer a dependable route through it. A sprawling framework with unclear failure handling is harder to trust than a narrow workflow whose behavior the team understands.
 
@@ -53,6 +74,8 @@ Keep workflow state outside the agent's conversation. Record which revision a ta
 
 Rules such as retry limits, timeouts, and approval requirements are ordinary software. Let the workflow enforce them. Use a model to interpret an unfamiliar failure or propose a repair when that requires judgment.
 
+That separation is reflected in the current project structure. The controller owns workflow routing and accepted outcomes; reusable packages supply agent behavior. Optional Git hooks handle worktree preparation and stage commits without asking a model to remember those lifecycle operations. These are implementation choices I can inspect and revise independently. [Controller documentation](</Users/j/pragma/controls/README.md>); [Registry documentation](</Users/j/pragma/registry/README.md>).
+
 Agentless demonstrates that a constrained sequence can be competitive on issue-repair benchmarks. It provides a reason to compare a simple process with a more elaborate one, rather than treating orchestration complexity as capability. [Agentless](https://arxiv.org/abs/2407.01489)
 
 ![A matrix distinguishes what five evidence types establish and what remains unverified.](verification-scope.png)
@@ -91,6 +114,8 @@ Use progressive rollout where the service and its traffic allow it. Google's SRE
 
 Permissions should match the task. Execution needs an identity and an audit trail. Where a policy must hold, enforce it at the tool or deployment boundary instead of relying on a prompt to remember it.
 
+My current local runner also illustrates the gap between a desired control and an implemented one: it executes with the host user's permissions and is explicitly documented as not being a sandbox. A declared task boundary does not establish isolation. That limit belongs in the operating model and in any claims I make about the system. [Current runner limits](</Users/j/pragma/controls/README.md>).
+
 ## Give humans a usable way to intervene
 
 An escalation should explain the unresolved question and provide the evidence needed to answer it. A transcript dump leaves the engineer to reconstruct the work. A concise account of the failing check, attempted repairs, and current diff is more useful.
@@ -105,10 +130,18 @@ Record execution costs and failures, including unsuccessful tasks. Measure time 
 
 When a failure recurs, decide whether the fix belongs in context, a tool, or a test. Keep a representative set of past tasks to check that the improvement helps without damaging other work. Evaluate changes to the factory itself before expanding their use.
 
-Start with a boundary you can support. Broaden it when evidence shows that the system handles the work and the team can recover when it doesn't. The useful result is a maintained capability with known limits, rather than a demonstration that depends on everything going right.
+## Engineering at a higher level of abstraction
+
+The shift I am arguing for changes the unit of engineering attention. Alongside the individual implementation, we design the specifications, tools, execution boundaries, and checks that shape a whole class of implementations. A recurring failure becomes a question about the production system: which assumption, interface, or missing check allowed it through?
+
+That requires engineers to stay close enough to the code and operating environment to investigate failures. Delegation without that understanding makes the system harder to repair. Higher abstraction brings a wider responsibility for understanding how the layers interact.
+
+For my project, the useful test of this direction is whether improvements to the factory make subsequent work easier to specify, verify, and maintain. I want to judge that through accepted changes, recovery effort, and total cost. More autonomous execution is useful only when the surrounding system can support it.
+
+Start with a boundary you can support. Broaden it when evidence shows that the system handles the work and the team can recover when it doesn't. I expect both that boundary and my recommendations to change as the project exposes weaknesses and better evidence becomes available. Engineering the factory includes revising the engineering model itself.
 
 ---
 
 ### Research and scope
 
-The architecture and examples are proposals. Benchmarks and older automation research inform the design but do not validate the factory as a whole. The cited NIST document is final version 1.1; version 1.2 is listed as an initial public draft in the reviewed record. See [References.md](writing/eng/posts/engineering%20the%20factory/References.md) for details.
+The project observations above come from recorded evaluations and current repository documentation. They do not establish general reliability, productivity gains, or ROI. Other examples remain illustrative design proposals. Benchmarks and older automation research do not validate the factory as a whole. NIST version status reflects the earlier source review, not a new standards check for this revision. Project links point to local evidence and need publishable equivalents before external publication. See [References.md](References.md) for details.

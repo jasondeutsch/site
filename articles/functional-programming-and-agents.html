@@ -1,0 +1,264 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>What functional programming taught me about agentic systems — Jason Deutsch</title><link rel="stylesheet" href="../styles.css?v=8d2e1b60face"></head><body><a class="skip" href="#main">Skip to content</a><div class="shell"><main id="main" class="article"><a class="back" href="../index.html#writing">← All writing</a><h1>What functional programming taught me about agentic systems</h1><div class="meta">Jason Deutsch · <time datetime="2026-10-18">October 18, 2026</time></div>
+<p>Consider an agent that updates a dependency in a service, runs the required checks, and opens a pull request. The pull request is created, but the response never reaches the agent. The tool call times out. What should happen next?</p>
+<p>Retrying sounds reasonable until it creates a second pull request. Asking the model to reason harder doesn&#x27;t establish whether the first operation succeeded. The system needs a record of the operation and a way to reconcile that record with the outside world.</p>
+<p>This is the kind of problem that makes functional programming feel relevant to agentic system design.</p>
+<p>I used to be a very passionate functional programmer. I went deep with Haskell. I enjoyed Elixir too, and think it&#x27;s a great language, though my preference was always for pure functional programming. I even explored Elm for a time. Its model-view-update architecture influenced Redux, which brought those ideas into the React ecosystem. <a href="https://redux.js.org/understanding/history-and-design/prior-art">Redux&#x27;s account of its influences</a></p>
+<p>The appeal had two parts. One was thinking in a rich type system: expressing the shape of a problem in types, then letting the compiler help check that the pieces fit together. Haskell&#x27;s Hindley-Milner foundation, extended with type classes, made that especially compelling. Type inference meant I could work with polymorphic functions without spelling out every type along the way. <a href="https://www.haskell.org/onlinereport/haskell2010/haskellch4.html">Haskell 2010 report, section 4.1</a></p>
+<p>The other was equational reasoning. With pure code, I could substitute an expression with its value and reason about a larger computation through smaller equalities. I didn&#x27;t have to mentally execute the whole application and track hidden mutations to understand a local transformation. There was something deeply appealing about code I could approach mathematically.</p>
+<p>Those two habits matter when designing agentic systems. Types help express what a workflow step is allowed to consume and produce. Purity gives us parts of the system whose behavior we can reason about independently. A model call introduces uncertainty, but the rules around its result can still be explicit and precise.</p>
+<p>Once a proposed action can change a repository or a customer record, that precision has practical consequences. We need to know what evidence permits the action, what state changes when it runs, and what happens if we never receive confirmation.</p>
+<h2>Give uncertainty a boundary</h2>
+<p><img src="../assets/functional-programming-and-agents/effect-boundaries.png" alt="Hand-drawn diagram showing a model proposal entering pure scope, evidence, and policy decisions, with authorized commands sent to tools and recorded observations returned." loading="lazy"></p>
+<p><em>Model calls and tools perform effects. Decisions consume explicit proposals and recorded observations; the drawing summarizes the proposed boundary.</em></p>
+<p>A pure function returns the same result for the same inputs and has no observable side effects. That makes it possible to reason about a piece of a program without reconstructing everything happening around it.</p>
+<p>A model call belongs at an effect boundary. Its response can vary, and it depends on a service outside the program. Even if a particular configuration produces repeatable responses, treating it as a pure function would hide dependencies that matter when the system fails.</p>
+<p>The useful design move is to separate that call from the rules that consume its result. Haskell makes this distinction explicit through <code>IO</code>: constructing and composing an action is different from performing it. <a href="https://www.haskell.org/onlinereport/haskell2010/haskellch7.html">Haskell report: basic I/O</a></p>
+<p>Follow that dependency update through the workflow. The model interprets the release notes and proposes changes to <code>package.json</code> and its lockfile. Applying that proposal in an isolated checkout produces a specific revision, which every later check and approval must identify. Ordinary code can check whether the target repository is allowed, whether the patch touches prohibited files, and whether the required tests passed against that exact revision.</p>
+<p>Those checks can take explicit inputs and return explicit decisions. They don&#x27;t need another model call to decide whether a test exit code was zero.</p>
+<p>In Haskell, that boundary is visible in the signatures. These examples use abbreviated domain types and omit API clients and persistence implementations so the workflow remains readable.</p>
+<pre><code>-- Calling the model interacts with an external service.
+proposePatch :: Task -&gt; IO (Either WorkflowError ProposedPatch)
+
+-- Checking the proposed scope only examines supplied values.
+validateScope :: Policy -&gt; ProposedPatch -&gt; Either WorkflowError ScopedPatch
+
+-- Applying a patch and running tests interact with the environment.
+runChecks :: ScopedPatch -&gt; IO CheckReport
+
+-- Accepting the report is another pure decision.
+acceptChecks :: ScopedPatch -&gt; CheckReport -&gt; Either WorkflowError CheckedPatch</code></pre>
+<p><code>acceptChecks</code> must verify that the report identifies the same resulting revision and the required checks all passed. The <code>IO</code> signatures make external interaction visible; the pure signatures make a narrower promise about what those functions can depend on.</p>
+<p>That leaves a smaller part of the system exposed to uncertainty. It also gives us a useful place to investigate a failure: did the model produce a bad proposal, did a tool fail, or did the acceptance rule allow something it should have rejected?</p>
+<h2>Reason about the decision with equations</h2>
+<p>For the dependency update, suppose the publication rule requires passing tests, a passing security check, and approval for the same revision. This deliberately small policy is a pure function:</p>
+<pre><code>publicationAllowed :: Revision -&gt; CheckReport -&gt; Approval -&gt; Bool
+publicationAllowed rev report approval =
+  evidenceMatches rev report
+    &amp;&amp; testsPassed report &amp;&amp; securityPassed report
+    &amp;&amp; approvedRevision approval == rev &amp;&amp; approvalGranted approval</code></pre>
+<p>Given <code>rev = Revision &quot;dependency-update-abc123&quot;</code>, a report for that revision with both checks passing, and a matching approval, we can expand the definition:</p>
+<pre><code>publicationAllowed rev report approval
+  == (True &amp;&amp; True &amp;&amp; True &amp;&amp; True &amp;&amp; True)
+  == True</code></pre>
+<p>These lines show equalities for those fixed inputs, rather than a program that performs publication. Within that policy calculation, we can replace <code>evidenceMatches rev report</code> with <code>True</code> without changing its meaning. If approval refers to an older revision, the corresponding equality becomes <code>False</code>, and so does the decision. No repository or model service needs to be running to understand why.</p>
+<p>Recorded inputs let us evaluate the same rule later. If the rule itself changes, we can also compare the old and new decisions against the same evidence. That makes a policy regression easier to investigate.</p>
+<p>The boundary matters: <code>proposePatch task</code> describes an I/O action, not a patch value that we can substitute into the calculation. Performing that action twice can produce different proposals. Equational reasoning about pure code does not grant repeatability to external actions. And a true policy result establishes only that the supplied evidence meets this rule; the runtime still has to establish that the evidence is trustworthy and current.</p>
+<h2>Composing work that can fail</h2>
+<p>Monads are often taught with more ceremony than the practical idea needs. Start with a problem: ordinary function composition works when one function produces exactly the value the next function expects. If <code>f :: a -&gt; b</code> and <code>g :: b -&gt; c</code>, we can compose them as <code>g . f</code>.</p>
+<p>But suppose both functions can fail. Now their signatures are <code>f :: a -&gt; Either Error b</code> and <code>g :: b -&gt; Either Error c</code>. The output of <code>f</code> no longer matches the input of <code>g</code>. At every connection, we have to inspect the result, preserve an error, or pass a successful value onward. A longer workflow repeats that plumbing at every step.</p>
+<p>A monad gives us a consistent way to compose dependent computations while preserving their context. In this example, the context is possible failure. Other contexts include optional values, state, and external I/O. Each has its own rules for what happens between steps.</p>
+<p>The two central operations are <code>pure</code>, which puts an ordinary value into the context, and bind, written <code>&gt;&gt;=</code>, which connects a contextual result to the next computation:</p>
+<pre><code>pure  :: Applicative m =&gt; a -&gt; m a
+(&gt;&gt;=) :: Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b</code></pre>
+<p>For this discussion, read <code>m a</code> as &quot;a computation in context <code>m</code> that can produce an <code>a</code>.&quot; A failed computation may produce no <code>a</code> at all. Bind lets the next computation depend on that <code>a</code>, while the implementation of <code>m</code> decides how the surrounding context behaves. In modern Haskell, <code>pure</code> belongs to <code>Applicative</code>, which every <code>Monad</code> must also implement.</p>
+<p>Here is a small failure-handling monad. It behaves like <code>Either</code>, with names chosen to make the example easier to read:</p>
+<pre><code>data Result e a = Failed e | Succeeded a
+  deriving (Eq, Show)
+
+-- Functor and Applicative instances appear in the optional note below.
+instance Monad (Result e) where
+  Failed err  &gt;&gt;= _    = Failed err
+  Succeeded x &gt;&gt;= next = next x</code></pre>
+<p><img src="../assets/functional-programming-and-agents/monadic-bind.png" alt="Hand-drawn diagram contrasting successful bind, which passes a patch to the next check, with failed bind, which preserves the error and skips the check." loading="lazy"></p>
+<p><em>Two paths through the custom Result instance: continue with the successful value, or propagate the existing error.</em></p>
+<p>The last two lines contain the sequencing rule: failure skips the next computation; success supplies its value to it. The optional note at the end supplies the supporting instances needed to compile this definition.</p>
+<p>We can use that rule directly:</p>
+<pre><code>checkProposal :: Policy -&gt; ProposedPatch -&gt; Result WorkflowError ScopedPatch
+checkProposal policy patch =
+  case validateScope policy patch of
+    Left err -&gt; Failed err
+    Right scoped -&gt; Succeeded scoped
+
+scopeProposal
+  :: Policy -&gt; Result WorkflowError ProposedPatch
+  -&gt; Result WorkflowError ScopedPatch
+scopeProposal policy proposal = proposal &gt;&gt;= checkProposal policy</code></pre>
+<p><code>Succeeded patch</code> passes our dependency update to <code>checkProposal</code>. <code>Failed err</code> preserves the earlier error and skips scope validation. Neither path performs publication. The monad defines the connective behavior, while <code>checkProposal</code> contains the domain rule.</p>
+<p>There are laws behind this abstraction. Introducing a value with <code>pure</code> and immediately binding it to a function must behave like calling that function directly. Binding a computation to <code>pure</code> must preserve it. Regrouping a chain of binds must preserve its meaning without changing the order of dependent steps. These laws make composition predictable; Haskell&#x27;s type checker does not prove that a custom instance obeys them. <a href="https://hackage.haskell.org/package/base/docs/Control-Monad.html">Haskell&#x27;s Monad documentation</a></p>
+<p>That is the reason for the abstraction: define the sequencing behavior once, then reuse it throughout a workflow and through generic combinators. Production Haskell already provides <code>Either</code> for this failure-handling case. <code>Maybe</code> handles possible absence, while <code>IO</code> represents external actions. Haskell uses monadic composition to integrate I/O with its pure language. <a href="https://www.haskell.org/definition/haskell2010.pdf">Haskell 2010 report, chapter 7</a></p>
+<p>These guarantees have limits. Monads don&#x27;t make a model deterministic. They don&#x27;t make an API call safe to retry, either. The list monad&#x27;s representation of multiple possibilities is also different from sampling a response from a language model. The connection is about composing computations while keeping their context visible. A monad is not a scheduler: concurrency, timeouts, and retry policies still need concrete implementations.</p>
+<p>For an agent workflow, a step might return a successful proposal, a recoverable tool failure, or a request for human input. The next step should depend on which result occurred. A missing approval cannot quietly become an empty string that the next prompt interprets however it likes.</p>
+<p>We don&#x27;t need to implement a monad transformer stack to benefit from this. We do need a consistent answer to what each step returns and how that result controls the next step.</p>
+<p>Start with the pure part. Suppose publication requires a valid scope, passing checks, and approval for the checked revision. Using the standard <code>Either</code> type, the same dependency update moves through three checks:</p>
+<pre><code>preparePublication
+  :: Policy
+  -&gt; ProposedPatch
+  -&gt; CheckReport
+  -&gt; Approval
+  -&gt; Either WorkflowError AuthorizedPatch
+preparePublication policy proposal report approval = do
+  scoped  &lt;- validateScope policy proposal
+  checked &lt;- acceptChecks scoped report
+  authorize checked approval</code></pre>
+<p>This <code>do</code> block uses the <code>Either</code> monad. A <code>Left</code> from scope validation skips the remaining steps and preserves the error. A <code>Right</code> passes its value to the next step. The helpers translate their specific errors into the shared <code>WorkflowError</code> type.</p>
+<h2>Separate independent checks from dependent steps</h2>
+<p>Tests and a security scan can both inspect the dependency update&#x27;s applied revision. Neither needs the other&#x27;s result. A publication decision, however, depends on their results and the approval. That difference should appear in the workflow.</p>
+<p>For independent inputs, <code>Applicative</code> composition is enough:</p>
+<pre><code>collectReport
+  :: Revision -&gt; IO Bool -&gt; IO Bool -&gt; IO CheckReport
+collectReport rev testAction securityAction =
+  CheckReport rev &lt;$&gt; testAction &lt;*&gt; securityAction</code></pre>
+<p><code>CheckReport</code> has fields for the revision, the test result, and the security result. Here <code>&lt;$&gt;</code> applies its partially filled constructor to the first result, and <code>&lt;*&gt;</code> supplies the second. Neither action is constructed from the other&#x27;s returned value. The ordinary <code>IO</code> instance still sequences these actions; this syntax does not make them concurrent. <a href="https://hackage.haskell.org/package/base/docs/Control-Applicative.html">Applicative documentation</a></p>
+<p>If the tools can safely run together, concurrency is a separate, explicit choice:</p>
+<pre><code>import Control.Concurrent.Async (concurrently)
+
+collectReportConcurrently
+  :: Revision -&gt; IO Bool -&gt; IO Bool -&gt; IO CheckReport
+collectReportConcurrently rev testAction securityAction = do
+  (testsOK, securityOK) &lt;- concurrently testAction securityAction
+  pure (CheckReport rev testsOK securityOK)</code></pre>
+<p>The <code>async</code> library supplies the scheduling and exception-handling behavior here. <a href="https://hackage.haskell.org/package/async/docs/Control-Concurrent-Async.html">Control.Concurrent.Async</a> These examples assume each action has already been bound to the named immutable revision. Tests that write generated files may require separate checkouts; a shared revision label alone doesn&#x27;t prevent interference.</p>
+<p>By contrast, <code>acceptChecks scoped report</code> must wait for the report, and <code>authorize checked approval</code> needs the resulting checked patch. Bind expresses that dependency in <code>preparePublication</code>. The agent-system lesson is practical: run independent observations together where safe, then join their evidence before allowing a consequential action.</p>
+<h2>Describe the action before executing it</h2>
+<p>Another useful functional programming habit is representing work as data.</p>
+<p>An agent can produce a proposed action containing a tool name, arguments, and the revision it expects to modify. The runtime can inspect that proposal before executing it. It can check permissions, attach an operation identifier, and reject stale assumptions.</p>
+<p>The distinction is concrete: a proposal to open a pull request should be inspectable before the request is created.</p>
+<p>Here is a small command type for the publication boundary:</p>
+<pre><code>data PublishCommand = OpenPullRequest
+  { operationId :: OperationId
+  , repository  :: Repository
+  , revision    :: Revision
+  , title       :: String
+  }
+
+-- Pure: describe the requested operation.
+planPublication :: OperationId -&gt; AuthorizedPatch -&gt; PublishCommand
+
+-- Effectful: execute it through the remote service.
+executePublication :: PublishCommand -&gt; IO PublishResult</code></pre>
+<p>Constructing an <code>OpenPullRequest</code> value creates no pull request. It gives the runtime something it can validate and persist before execution. The executor must also enforce credentials and policy at the tool boundary; having a command value is not itself permission to run it.</p>
+<p>For a coding workflow, the sequence might look like this:</p>
+<pre><code>model response
+    → parse proposed patch
+    → validate scope
+    → apply in an isolated checkout
+    → run required checks
+    → record evidence against the resulting revision
+    → evaluate publication policy
+    → execute the authorized action</code></pre>
+<p>This is a proposed architecture, not a claim that each arrow is pure. Applying a patch and running tests are effects too. The point is that the system names them and gives each one a contract.</p>
+<p>It also creates a way to test workflow rules without performing the real action. A test interpreter can return a timeout or a permission failure. We can then check that the workflow stops or reconciles state as intended, without creating a real pull request.</p>
+<h2>Make invalid transitions difficult</h2>
+<p>Haskell encourages you to represent distinctions in types. Agent workflows benefit from the same discipline.</p>
+<p>A patch, a checked patch, and a patch authorized for publication are different things. Passing all three around as a generic task object with optional fields makes the distinctions easy to lose.</p>
+<p>A more explicit model might describe the workflow like this:</p>
+<pre><code>ProposedPatch → CheckedPatch | CheckFailure
+CheckedPatch → AuthorizedPatch | AwaitingApproval | Rejected
+AuthorizedPatch → Published | PublicationUnknown | PublicationFailed</code></pre>
+<p><code>PublicationUnknown</code> deserves its own state. It captures the opening example: the request may have succeeded even though the caller received no confirmation. Treating that as an ordinary failure invites a blind retry.</p>
+<p>Types can help enforce the allowed transitions inside the program. They cannot establish that a model&#x27;s claim is true or that an external service obeyed the contract. Untrusted inputs still need runtime validation. The evidence behind a <code>CheckedPatch</code> must refer to the actual patch being published; a check against an earlier revision isn&#x27;t enough.</p>
+<p>The benefit is having fewer places where the program can accidentally skip a required decision.</p>
+<p>A small module can enforce that distinction without advanced type machinery:</p>
+<pre><code>module Workflow
+  ( CheckedPatch, AuthorizedPatch
+  , acceptChecks, authorize, planPublication
+  -- Other public domain types omitted here.
+  ) where
+
+-- Constructors are private to this module.
+newtype CheckedPatch = CheckedPatch ScopedPatch
+newtype AuthorizedPatch = AuthorizedPatch CheckedPatch
+
+acceptChecks
+  :: ScopedPatch -&gt; CheckReport
+  -&gt; Either WorkflowError CheckedPatch
+-- Implementation validates checks and their revision.
+
+authorize
+  :: CheckedPatch -&gt; Approval
+  -&gt; Either WorkflowError AuthorizedPatch
+-- Implementation checks approval for the checked revision.
+
+planPublication :: OperationId -&gt; AuthorizedPatch -&gt; PublishCommand
+
+data PublishResult
+  = Published PullRequestId
+  | PublicationUnknown OperationId
+  | PublicationFailed String</code></pre>
+<p>This is a module interface sketch; the function bodies are omitted. Importing code cannot construct an <code>AuthorizedPatch</code> directly or pass a <code>ProposedPatch</code> to <code>planPublication</code>. The private implementation is responsible for checking the evidence and binding approval to that revision. If approval can expire or be revoked, the executor must revalidate it at execution time. The companion uses a fixed approval snapshot to keep that separate production concern out of the demonstration. This use of hidden constructors is Haskell&#x27;s ordinary support for abstract data types, rather than a guarantee supplied by the model. <a href="https://www.haskell.org/onlinereport/haskell2010/haskellch5.html#sect5.8">Haskell report: abstract data types</a></p>
+<h2>Replay the record, then decide what to retry</h2>
+<p><img src="../assets/functional-programming-and-agents/publication-recovery.png" alt="Hand-drawn state diagram: Ready becomes In flight; confirmation reaches Complete, while a timeout reaches Uncertain. A confirming lookup resolves Uncertain to Complete." loading="lazy"></p>
+<p><em>Publication attempt states from the reducer below. A timeout records uncertainty; reconciliation can establish completion. The sketch omits definite failure paths.</em></p>
+<p>Immutable state is another useful connection. An agent conversation is a poor substitute for an authoritative execution record.</p>
+<p>Keep the accepted proposal and the observed tool results. Record which revision was checked and what happened when publication was attempted. Build the current workflow state from those facts, using a defined transition function.</p>
+<p>Elm offers a familiar way to think about this: a model holds state, and an update function consumes messages to produce the next state. The agent workflow can apply the same separation to tool observations. Persistence and recovery are additional requirements; the Elm pattern alone doesn&#x27;t provide them. <a href="https://guide.elm-lang.org/architecture/">The Elm Architecture</a></p>
+<p>A minimal history for the publication attempt can be reduced with a pure function:</p>
+<pre><code>import Control.Monad (foldM)
+
+data PublishState
+  = Ready
+  | InFlight OperationId
+  | Uncertain OperationId
+  | Complete OperationId PullRequestId
+  deriving (Eq, Show)
+
+data PublishEvent
+  = Started OperationId
+  | TimedOut OperationId
+  | Confirmed OperationId PullRequestId
+
+step :: PublishState -&gt; PublishEvent -&gt; Either String PublishState
+step Ready (Started op) = Right (InFlight op)
+step (InFlight expected) (TimedOut op)
+  | expected == op = Right (Uncertain op)
+step (InFlight expected) (Confirmed op pr)
+  | expected == op = Right (Complete op pr)
+step (Uncertain expected) (Confirmed op pr)
+  | expected == op = Right (Complete op pr)
+step _ _ = Left &quot;Invalid publication transition&quot;
+
+replay :: [PublishEvent] -&gt; Either String PublishState
+replay = foldM step Ready</code></pre>
+<p>A timeout leaves the operation uncertain. A later confirmation can resolve it. Mismatched operation identifiers and invalid event orderings return an error. A production event store also needs durable, ordered appends and concurrency control; this reducer only demonstrates how recorded facts determine state.</p>
+<p>That gives us a way to replay the coordination logic with recorded observations. Calling the model again is a new generation attempt, with a potentially different answer. Replaying a recorded response serves a different purpose: understanding why the workflow made a particular decision.</p>
+<p>Temporal illustrates a related boundary in durable execution. Its workflow definitions must be deterministic so execution can be reconstructed from history; external effects belong in activities whose results are recorded. This is a useful engineering reference for the separation, even when a system uses a different runtime. <a href="https://docs.temporal.io/workflow-definition">Temporal workflow documentation</a></p>
+<p>Recovery still needs care. An external operation can succeed before its completion is recorded. Temporal&#x27;s activity documentation describes that failure window and recommends idempotent activities. <a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/activities/activity-definition.mdx">Activity definitions</a></p>
+<p>For the pull request example, persist an operation identifier before publication and provide a way to find the resulting pull request using that identifier. After a timeout, reconcile with the remote service before creating another one. Where the service supports an idempotency key, use it. Where it doesn&#x27;t, design the recovery path around that limitation. AWS&#x27;s Builders&#x27; Library describes how caller-supplied request identifiers let a service recognize retries of the same intended operation. The service must implement that contract; adding an identifier locally doesn&#x27;t provide deduplication. <a href="https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/">Making retries safe with idempotent APIs</a></p>
+<p>For an uncertain publication, the recovery path can perform a lookup without issuing another create request:</p>
+<pre><code>data LookupResult
+  = Found PullRequestId
+  | NotFound
+  | LookupUnavailable String
+
+data RecoveryDecision
+  = Resolved PullRequestId
+  | NeedsReconciliation OperationId
+
+recoverPublication
+  :: (OperationId -&gt; IO LookupResult)
+  -&gt; OperationId
+  -&gt; IO RecoveryDecision
+recoverPublication lookupRemote op = do
+  result &lt;- lookupRemote op
+  pure $ case result of
+    Found pr -&gt; Resolved pr
+    NotFound -&gt; NeedsReconciliation op
+    LookupUnavailable _ -&gt; NeedsReconciliation op</code></pre>
+<p><code>NotFound</code> alone doesn&#x27;t authorize a retry: the original request might still be in flight, or the lookup might lag behind the write. Retrying requires an additional guarantee, such as remote deduplication with the same operation key. The runtime should persist a confirmation event once recovery resolves the operation.</p>
+<p>Pure coordination logic makes recovery easier to reason about. The external effect still needs its own recovery design.</p>
+<h2>Isolate workers and recover their state</h2>
+<p>My preference for pure FP doesn&#x27;t diminish what Elixir brings to this discussion. Its Erlang foundation puts process isolation and failure handling close to the center of system design. Elixir&#x27;s processes run concurrently and communicate through messages, as its own documentation explains. <a href="https://hexdocs.pm/elixir/processes.html">Elixir: processes</a> Armstrong&#x27;s thesis develops the underlying Erlang approach to isolation and failure handling. <a href="https://erlang.org/download/armstrong_thesis_2003.pdf">Making reliable distributed systems</a></p>
+<p>There is a useful lesson there for systems with several agents: give each worker a defined responsibility and communicate through explicit messages. For our dependency update, one worker can interpret release notes and prepare the candidate patch. Test workers return evidence for its revision; the coordinator owns the decision to open the pull request. Shared mutable context makes those responsibilities harder to follow.</p>
+<p>Isolation also needs to exist in the resources the workers use. Two separate conversations editing the same checkout still share mutable files. Give concurrent workers separate checkouts or another explicit ownership mechanism.</p>
+<p>Restarting a worker doesn&#x27;t undo its external effects. A restarted agent needs to recover the execution record before deciding what remains to be done. Otherwise supervision can repeatedly trigger the same mistake.</p>
+<h2>Use the abstraction where it earns its place</h2>
+<p>There is a temptation, especially if you enjoyed Haskell, to turn these connections into an elaborate framework. A small workflow may only need tagged result types and a few explicit transitions. Persistence and more sophisticated effect handling should answer actual recovery needs.</p>
+<p>The practical starting point is one action that can change the outside world. Describe it as data. Define the evidence and authority required to execute it. Decide how the system will discover whether it happened after a timeout.</p>
+<p>That is where functional programming has something useful to say about agents. We can give uncertain computations a precise place in a system, then make the decisions around them understandable enough to inspect, test, and repair.</p>
+<h2>Try the workflow</h2>
+<p>The <a href="../assets/functional-programming-and-agents/examples/README.md">companion example</a> implements the dependency-update types, the pure decisions, the custom <code>Result</code> monad, and simulated publication and recovery. From its <code>examples</code> directory, run:</p>
+<pre><code>runghc -i. Main.hs</code></pre>
+<p>It uses only <code>base</code>. Its scenario checks cover successful authorization, rejected scope, failing tests, stale evidence, missing or stale approval, a publication whose response is lost, and unresolved lookups. They also check that a failed <code>Result</code> skips its continuation and exercise representative monad-law cases. Those finite checks illustrate the laws; they do not prove them for every input.</p>
+<p>The remote service is an in-memory simulation. The example performs no real model calls, repository changes, or network writes. It does not provide durable storage, production authorization, or a concurrent tool runner. The concurrency snippet above uses the separate <code>async</code> package. No local Haskell compiler was available during preparation, so the companion is supplied as complete source with scenario checks, but has not been compiled or executed here.</p>
+<details><summary>Optional Haskell detail: the supporting Result instances</summary>
+<p>Modern Haskell requires every <code>Monad</code> to also be an <code>Applicative</code>, and every <code>Applicative</code> to be a <code>Functor</code>. These instances complete the earlier <code>Result</code> definition:</p>
+<pre><code>instance Functor (Result e) where
+  fmap _ (Failed err) = Failed err
+  fmap f (Succeeded x) = Succeeded (f x)
+
+instance Applicative (Result e) where
+  pure = Succeeded
+  Failed err &lt;*&gt; _ = Failed err
+  Succeeded f &lt;*&gt; result = fmap f result</code></pre>
+<p><code>fmap</code> transforms a successful value while preserving failure. <code>pure</code> constructs success; <code>&lt;*&gt;</code> applies a successful function to a contextual argument and propagates failure. The complete definition is in <a href="../assets/functional-programming-and-agents/examples/Result.hs">Result.hs</a>.</p>
+</details></main><footer><span>© Jason Deutsch</span><a href="../index.html#newsletter">Occasional notes by email →</a><a href="https://www.linkedin.com/in/n3rdery/" rel="me">LinkedIn</a></footer></div></body></html>
