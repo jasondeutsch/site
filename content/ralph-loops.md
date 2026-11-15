@@ -1,22 +1,22 @@
 # Ralph loops: persistence, memory, and control
 
-A coding agent implements a function, runs the tests, fixes two failures, and announces that it is done. The feature still needs a command-line interface. The agent completed the work it had in view, returned a response, and stopped. Something outside that conversation has to decide what happens next.
+A coding agent implements a function, runs tests, fixes two failures, and stops. The feature still needs a command-line interface. The agent finished the work in its current view, leaving something outside the conversation to decide how the task continues.
 
-A Ralph loop supplies that outside mechanism. It starts an agent, lets it work, inspects what remains, and starts another attempt. In the fresh-context form examined here, the next attempt gets a new conversation. The repository, specifications, plan, and verification results carry the work forward.
+A Ralph loop starts another agent attempt against the remaining work. In the fresh-context form examined here, each attempt begins a new conversation. Specifications and repository state carry progress forward, with plans and verification results identifying what to do next.
 
-My interest in Ralph loops is in the engineering behind that repetition. How does a system make progress while repeatedly discarding its conversation? Where does its memory live? What distinguishes a useful retry from another expensive pass through the same mistake? And which decisions belong to the model rather than the process supervising it?
+I am interested in what lets that repetition produce progress. Discarding the conversation forces memory into explicit artifacts. The controller has to distinguish useful retries from repeated mistakes and decide which judgments remain with the model.
 
-The shell loop is small enough to obscure those questions. Its behavior depends on the machinery around it: task selection, context reconstruction, verification, and the conditions under which another attempt is allowed. That machinery is where the design becomes interesting.
+A few lines of shell leave most of those decisions unspecified. Task selection and context reconstruction shape each attempt; verification and retry policy determine whether another attempt is warranted.
 
-Pi provides a concrete agent harness to examine. The accompanying Python implementation makes the outer controller explicit, with a small slug utility as the candidate repository. The code and diagrams expose particular choices and their consequences. They also make it possible to distinguish what the loop itself contributes from what comes from the specification, agent, or verifier.
+Pi supplies the inner agent harness for this investigation. The accompanying Python controller works against a small slug utility. Its code and diagrams expose which responsibilities belong to the outer loop and which belong to the specification, agent, or verifier.
 
 ## Two loops with different responsibilities
 
 A coding agent already contains a loop. A model receives messages and tool definitions, requests a file read or shell command, receives the result, and chooses another action. That sequence continues until the model returns a final response or the harness interrupts it.
 
-That is the **inner loop**. It operates within one conversation.
+The inner loop operates within one conversation.
 
-A Ralph controller adds an **outer loop**. Its unit of work is an agent attempt, which may contain many model calls and tool executions.
+The outer loop supervises whole agent attempts, each of which may contain many model calls and tool executions.
 
 ![The outer controller selects a task and starts an agent; the inner agent runs tools; independent verification returns evidence to durable state.](images/01-two-loops.png)
 
@@ -42,7 +42,7 @@ while work_remains() and budget_remains():
     record(evidence)
 ```
 
-Those loops fail differently. An inner loop can get stuck repeatedly editing the same function. An outer loop can repeatedly restart that failing attempt, consuming a fresh context and another set of model calls every time. Adding the outer loop increases persistence. Whether that persistence produces useful work depends on the feedback between attempts.
+An inner loop can keep editing the same function without resolving its failure. An outer loop can restart that same unsuccessful task indefinitely, paying for a new context each time. Feedback between attempts determines whether increased persistence yields useful work.
 
 Geoffrey Huntley's original account calls Ralph a technique and presents it as a Bash loop. It also describes one task per loop, durable specifications and plans, and tuning instructions in response to observed failures. That is the historical starting point; the controller developed below is a reference design with additional verification and budget rules. [Huntley: Ralph Wiggum as a “software engineer”](https://ghuntley.com/ralph/)
 
@@ -61,7 +61,7 @@ The session lifecycle determines whether history is preserved, compacted, branch
 
 ## What the shell loop leaves unspecified
 
-The conceptual version is almost embarrassingly small:
+The minimal version fits in a few lines:
 
 ```bash
 while true; do
@@ -82,7 +82,7 @@ Implement it, run the relevant tests, and report the result.
 If all specified behaviors already work, report that fact and stop.
 ```
 
-This is enough to demonstrate persistence. It is insufficient as a completion protocol: an agent can truthfully report that everything works, and the shell will immediately start it again. It can also report completion incorrectly. Neither outcome changes `while true`.
+This repeats work, but it has no completion protocol. Even a correct report that every behavior works leaves `while true` unchanged. An incorrect completion claim has the same effect.
 
 An attempt limit and an acceptance command introduce two decisions that the infinite loop lacks:
 
@@ -113,9 +113,9 @@ The exit decisions separate different kinds of failure. A failed agent process s
 
 ## Progress without conversational continuity
 
-The apparent contradiction is that we discard the conversation while expecting the system to remember its work.
+A fresh-context restart needs durable state to replace the conversation it discards.
 
-The resolution is external state. The model is temporary; the work is durable.
+Keep the work outside the temporary model session.
 
 Let:
 
@@ -138,7 +138,7 @@ The next context is rebuilt from `Rₙ₊₁` and `Eₙ₊₁`. The model does n
 
 *Figure 2. A context reset trades conversational continuity for explicit recovery. Good handoff artifacts make that trade practical.*
 
-This does not guarantee convergence. The agent may introduce a regression, misunderstand the same requirement again, or optimize for an incomplete verifier. The sequence of repository states can oscillate:
+The sequence need not converge. The agent can repeat a misunderstanding or satisfy an incomplete verifier by introducing another regression:
 
 ```text
 A: Unicode is accidentally accepted.
@@ -162,7 +162,7 @@ Different artifacts answer different questions:
 | Attempt record | What ran, with what budget and outcome? | Controller |
 | Operational notes | How is this repository built and tested? | Maintainers; agents may propose updates |
 
-A single `progress.md` file tends to blur these roles. A note that says “CLI done” is a claim. A test process that exercised the CLI and recorded its exit code is evidence. A specification that requires exit code 2 defines the contract. Those distinctions matter when the claim and the evidence disagree.
+A note saying “CLI done” records a claim. A check that exercises the CLI and retains its exit status supplies evidence. The specification defines the required status. Give those records distinct roles when they share a `progress.md` file.
 
 A useful handoff is short and concrete:
 
@@ -187,9 +187,9 @@ A compact handoff can retain the failing assertion and relevant paths while leav
 
 ## The specification defines the problem the loop can solve
 
-A prompt such as “build a good slug library” leaves too many decisions unresolved. How should Unicode work? What happens for an empty result? Is the CLI one argument or a joined sentence? Which behavior marks completion?
+“Build a good slug library” leaves consequential choices open: Unicode treatment and empty-result handling, for example. Define the CLI argument contract and the behavior that marks completion too.
 
-A loop can repeatedly make those decisions, but repetition will not make them consistent.
+Repeated attempts can choose different answers to those same unresolved requirements.
 
 The slug example is deliberately small. It has enough edge cases to expose the machinery without requiring a package manager, database, or network service. The specification is in [`examples/project/specs/slug.md`](examples/project/specs/slug.md).
 
@@ -327,9 +327,9 @@ AssertionError: expected 2, got 0
 </verification-output>
 ```
 
-Several details are doing work here.
+The template gives the verifier and implementation agent different responsibilities.
 
-The task ID ties the attempt to an explicit work item. The contract is supplied directly instead of assuming the model remembers it. The failure output identifies a concrete disagreement. The final report helps a human inspect the run, while the verifier retains the completion decision.
+The task ID identifies the work item, and the prompt supplies the contract directly. Failure output records a specific disagreement. The agent’s report supports human inspection while the external verifier decides completion.
 
 The “do not” instructions express the intended policy. They are not access controls. An agent with a shell tool and the same operating-system permissions as the controller may still reach the controller's files. The distinction becomes consequential when the same design is used outside a cooperative local environment.
 
@@ -355,7 +355,7 @@ The prompt distinguishes a recorded observation from a diagnosis. “The argumen
 
 ### Ambiguity is a different kind of failure
 
-For a task that depends on an unspecified rule, the desired output is an actionable question:
+When a task depends on an unspecified rule, return a question that identifies the decision needed to proceed:
 
 ```text
 If you cannot choose an implementation without inventing a product rule,
@@ -424,7 +424,7 @@ elif required_checks_passed:
     accept_candidate(candidate_identity)
 ```
 
-That is the useful meaning of backpressure here. The system cannot keep promoting unchecked work merely because the agent's narrative is persuasive.
+The failed check now controls what the system may promote. A persuasive agent report cannot advance the candidate past that condition.
 
 Different checks establish different properties. Type checking is useful for type consistency, but it cannot establish that two CLI arguments produce exit code 2. A screenshot can show layout, but it cannot establish that a form submission is idempotent. A unit test can validate one function while the application wires up a different one.
 
@@ -461,7 +461,7 @@ The controller reduces an open-ended agent interaction to a small set of outcome
 
 The reference implementation chooses a simple scheduling policy: run acceptance checks in priority order and select the first failing task. After an agent attempt, run that sequence again from the beginning. If a later change breaks an earlier requirement, the earlier requirement becomes the next task.
 
-This avoids trusting a model-maintained “done” flag. It also keeps restart behavior simple: every invocation checks the current files, even if the saved state says complete.
+On restart, the controller checks the current files even if saved state says complete. The model’s “done” flag has no role in that decision.
 
 The tradeoff is repeated verification. A large suite needs a more efficient evidence graph, with invalidation rules for which changes require which checks. Cached evidence introduces another correctness question: which edits invalidate which earlier results?
 
@@ -506,7 +506,7 @@ The state file records the project identity, configuration identity, consumed at
 
 The complete file is [`examples/ralph.py`](examples/ralph.py). Several implementation details expose assumptions that the shell loop leaves implicit.
 
-First, process execution uses argument arrays rather than a shell command string. A timeout or interruption kills the child process group:
+Process execution passes an argument array directly to the subprocess API. A timeout or interruption kills the child process group:
 
 ```python
 process = subprocess.Popen(
@@ -577,15 +577,15 @@ while True:
 
 A completed agent invocation triggers another verification pass. It does not directly mark a task done.
 
-### Why reserve the attempt before starting it?
+### Reserve attempts before launching work
 
 A crash can occur at any point. If the counter advances only after the process returns, repeated crashes can start an unlimited number of uncounted attempts.
 
 The controller persists the consumed attempt first. On restart, the repository may contain a partial edit. The controller verifies those files, then either accepts them, selects the first failing requirement, or stops because the budget has already been consumed.
 
-That gives bounded retry behavior, but it does not make arbitrary tool actions exactly-once. A command that sent an email or deployed a service could have taken effect before the crash. This example keeps those effects outside the loop's intended scope. External operations introduce a need for explicit operation identities and reconciliation before retrying.
+Reserving attempts bounds local retries. It cannot make an email or deployment occur exactly once if the effect precedes the crash. Those operations are outside this example’s intended scope and would need durable identities with reconciliation before retry.
 
-### Why stop on an agent process error?
+### Classify process errors before retrying
 
 A nonzero exit might mean authentication failed, the provider rejected a request, the process crashed, or the run was interrupted. Automatically treating all of these as “please edit the code again” obscures the failure.
 
@@ -611,7 +611,7 @@ The reference implementation uses this argument array:
 ]
 ```
 
-Two choices matter to the architecture. Print mode gives the invocation a one-invocation lifecycle: it processes the supplied prompt and exits. A separate controller deadline bounds how long that may take. A fresh invocation without resume options, combined with an in-memory session, establishes the conversation reset. The remaining discovery flags reduce implicit inputs, leaving the assembled prompt and candidate repository easier to account for. None of these flags creates a filesystem or network sandbox. [Pi command-line reference](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md)
+Print mode processes the supplied prompt and exits, with the controller enforcing its deadline. Starting without resume options and using an in-memory session resets the conversation. Discovery flags reduce implicit inputs so the prompt and repository are easier to account for. These flags leave filesystem and network permissions to the environment. [Pi command-line reference](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md)
 
 The process boundary also gives the controller a practical way to supervise the agent. It can retain output, enforce a deadline, and terminate ordinary child processes without depending on the model to cooperate. Model selection and credentials remain harness configuration; they do not determine the controller's acceptance policy.
 
@@ -636,7 +636,7 @@ This is an explanation of the transitions, not a measured pi session. An agent m
 
 The offline tests substitute local Python processes for pi. A fake agent writes known source, makes no edit, exits with an error, or exceeds a timeout. The tests exercise real subprocesses, file edits, acceptance failures, state files, and locks. They establish properties of the controller without establishing anything about model coding performance.
 
-That distinction is useful when reasoning about the system. Whether a false `<promise>COMPLETE</promise>` can bypass verification is a controller question. Whether a model can implement the requested behavior within three attempts is an empirical question about the model, context, task, and tools.
+Test whether a false `<promise>COMPLETE</promise>` bypasses verification as a controller property. Measure whether a model finishes the behavior in three attempts as a separate outcome involving the task and context, harness, and tools.
 
 ## Session lifecycle matters more than the integration interface
 
@@ -730,7 +730,7 @@ For large systems, this can be optimized with immutable artifact IDs and validat
 
 An iteration limit bounds the number of attempts, but says little about the cost of one attempt. An attempt can contain many model calls, shell commands, and provider-side retries.
 
-Different budgets constrain different kinds of failure:
+Assign a control to each resource failure:
 
 | Budget | What it catches | Included in the example? |
 | --- | --- | --- |
@@ -744,7 +744,7 @@ Different budgets constrain different kinds of failure:
 
 The no-progress rule deserves scrutiny. The example increments a stagnation counter when the project content fingerprint stays unchanged across an agent attempt. Three consecutive unchanged attempts stop the run by default.
 
-That is a cheap heuristic. A model can investigate usefully without editing anything. It can also change a comment each time and evade the heuristic. Stagnation is therefore an inspection signal with both false positives and false negatives.
+An unchanged fingerprint is a cheap inspection signal. Useful investigation can leave files untouched, while repeated comment edits can evade the counter. Expect both false positives and false negatives.
 
 Better signals include a shrinking set of failing acceptance cases, new verified tasks, or a changed diagnostic category. Those signals need care too: fixing easy tests while leaving the hard requirement untouched can create a misleading picture of progress.
 
@@ -765,7 +765,7 @@ model cost per attempt  = $0.081
 12 attempts             = $0.972
 ```
 
-These are invented prices and token counts for the calculation, rather than provider quotations or measured costs. Actual inner-loop traffic can be much larger because later model requests include earlier messages, tool results, and reasoning context. Cache accounting, retries, model selection, and auxiliary calls also change the bill.
+The prices and token counts are illustrative. Actual inner-loop requests can be much larger as they include earlier messages and tool results. Cache accounting and retries affect the bill, along with model choice and auxiliary calls.
 
 The practical control is to measure provider-reported usage for each attempt and enforce a spend boundary before starting more work. A wall-clock timeout cannot guarantee a dollar limit.
 
@@ -773,7 +773,7 @@ The practical control is to measure provider-reported usage for each attempt and
 
 Each restart pays an orientation cost. If an attempt spends two minutes reading the same repository and ten seconds editing it, the task may be too small or the input package may be poorly targeted.
 
-Conversely, if an attempt spends most of its time navigating a long conversation full of unrelated failures, a reset may help. The useful task size balances reconstruction overhead against the amount of context needed to investigate and verify one behavior.
+A reset may help when irrelevant failures fill the conversation. Compare the reconstruction overhead with the context required to investigate and verify one coherent behavior.
 
 A context-window rule of thumb cannot establish reliability for a particular model and workload. The relevant question is how accepted work and total cost change under different context policies.
 
@@ -923,7 +923,7 @@ The model can recommend what to do. The controller still decides whether that ta
 
 Replanning is especially useful when a task repeatedly exceeds the context or time budget. A revised plan can split the work into coherent behaviors and record their dependencies. Increasing the iteration limit does little for a task that is too large to finish within any one attempt.
 
-## What would establish that the loop helps?
+## Compare persistence and context policies
 
 A successful demonstration establishes that a particular trajectory reached acceptance. It leaves open whether repeated fresh sessions improve outcomes across a representative workload.
 
@@ -945,23 +945,23 @@ The relevant outcomes include:
 - total model usage and elapsed time per accepted task;
 - attempts spent repeating the same failure;
 - human intervention and review effort;
-- cases where the loop stops appropriately instead of claiming success.
+- appropriate stops with unfinished work reported accurately.
 
 Failed runs belong in the accounting. Cost per successful run hides the money spent on runs that never complete. A useful aggregate is total cost across all assigned tasks divided by the number that meet the agreed acceptance policy, with incomplete tasks reported separately.
 
-Manual inspection of accepted candidates can reveal shortcuts, untested requirements, or harmful dependency changes that the finite suite missed. Those findings would point toward a stronger verifier rather than necessarily a longer implementation prompt.
+Manual inspection of accepted candidates can reveal shortcuts, untested requirements, or harmful dependency changes that the finite suite missed. Use those findings to identify missing verifier checks before revising the implementation prompt.
 
 ## Where the useful work happens
 
-The shell loop explains how another attempt starts. The harder question is why that attempt should be more useful than the one before it.
+Starting another attempt is easy. The next attempt needs changed inputs if it is to address what defeated the previous one.
 
-In this design, the answer is a changed repository and better evidence. A failed assertion identifies a disagreement with the contract. A partial implementation gives the next conversation something concrete to inspect. A durable decision prevents the agent from reopening the same ambiguity. Without those changes, a restart can reproduce the same failure with a different explanation.
+Here, the repository and verification evidence change between attempts. A failed assertion identifies a contract disagreement. Partial code gives the new session something to inspect, and durable decisions keep settled requirements available. Without those records, the restart may repeat the same mistake.
 
 Fresh context makes this dependency unusually visible. Everything worth retaining has to survive outside the conversation, and every attempt has to reconstruct enough of it to act. That can reduce the burden of irrelevant history. It also creates an orientation cost and makes omissions in the handoff consequential.
 
-The outer controller turns those attempts into a bounded process. Its decisions are comparatively ordinary: which task is eligible, whether the budget remains, which candidate was checked, and whether the evidence permits acceptance. The model handles the uncertain investigation and implementation inside that structure.
+The controller decides which task is eligible and whether its budget permits another attempt. It identifies the checked candidate and applies acceptance rules. The model investigates and implements within that bounded process.
 
-That division is the part of Ralph loops I want to examine further. The useful comparison is between continuation and fresh-session attempts on the same repository, with the same acceptance rules and full accounting for failed runs. It would show whether reconstructing context improves accepted work enough to justify its cost, and where a different task boundary or verifier matters more than another restart.
+I want to compare fresh-session attempts with continuation on the same repository and acceptance rules, counting failed runs in both. That experiment could show when reconstruction improves accepted work enough to cover its cost, and when the task boundary or verifier needs attention instead.
 
 ---
 

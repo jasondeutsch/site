@@ -1,8 +1,14 @@
-# Context engineering: foundations, significance, and a research agenda
+# Context engineering: designing the information an agent uses
+
+A coding agent can understand an API migration and still remove an endpoint that customers need. If its next invocation never receives the compatibility requirement, better reasoning has no requirement to work from. If the requirement is present but the model ignores it, the failure calls for a different intervention.
+
+Context engineering examines how information reaches each decision and remains usable as the task changes. My thesis is that we should treat context as a system component with explicit authority rules and reproducible construction, then evaluate its effect on task outcomes.
+
+I am using this series to develop my own understanding of that problem. The working model below draws on in-context learning and retrieval, alongside partial observability, memory research, long-context evaluation, and prompt-injection security. It treats context construction as a resource-constrained policy for acquiring and representing information, retaining what later decisions need, and presenting it to the model.
 
 ## Definitions
 
-The following definitions establish how these terms are used in this article. Formal distinctions are developed in the relevant sections.
+These definitions fix the terminology used below. Later sections develop the formal distinctions.
 
 - **Large language model (LLM):** A model trained to process and generate language. In an agentic system, it can interpret information and propose actions; surrounding software determines how those proposals are executed.
 - **Inference:** The computation through which a trained model produces an output from supplied inputs, ordinarily without updating its learned parameters.
@@ -24,21 +30,19 @@ The following definitions establish how these terms are used in this article. Fo
 - **Context policy:** The rules or learned procedure governing information acquisition, selection, transformation, ordering, and retention for model invocations.
 - **Resource budget:** A constraint on the work the system may consume, such as input size, model calls, retrieval operations, cost, or elapsed time. A token is a model-specific unit used to encode text and account for sequence length.
 
-The behavior of  LLM oriented systems depends on the information made available to it at each inference step. In an agentic system, that information changes as the system acquires observations, invokes tools, revises plans, stores memories, and acts on an external environment. Context engineering concerns the design and evaluation of these information processes. This article develops a working definition of the field, distinguishes it from adjacent practices, and explains its significance for intelligent systems that operate under incomplete information and finite computational resources. It proposes a conceptual model in which context construction is a constrained, sequential policy governing information acquisition, representation, retention, and presentation. The argument draws on research in in-context learning, RAG, partial observability, long-context evaluation, memory systems, and prompt-injection security. My thesis is that context should be studied as a system-level determinant of behavior whose quality requires empirical evaluation, explicit authority boundaries, and reproducible construction. In an effort to fully describe and expand my own understanding I will attempt to publish a series of articles exploring context engineering.
-
 ## 1. The problem of informational adequacy
 
-An intelligent system can possess a capable language model and still lack the information required for a defensible decision. A coding agent may understand compatibility in general while receiving an obsolete interface specification. A research assistant may retrieve relevant documents while omitting the passage that qualifies its conclusion. A long running agent may retain a record of its actions while losing the distinction between an intended operation and a confirmed outcome.
+A capable model may receive an obsolete interface specification, or a relevant document without the passage qualifying its conclusion. During a long task, the system may preserve an intended operation while losing whether it actually happened. Each failure leaves a different gap in the evidence available for the next decision.
 
-These failures raise a problem of informational adequacy: what information must be available, in what form, and under what interpretation for the system to perform its task correctly?
+The engineering question is which information a defensible decision requires, how to represent it, and which interpretation the system may treat as authoritative.
 
 The question is distinct from whether the underlying model can perform the task when supplied with sufficient evidence. It concerns how evidence and task state become available in the first place, how they change over time, and whether the surrounding system preserves the distinctions needed to use them. Investigating that problem requires a unit of analysis broader than an isolated prompt/response pair.
 
 The few-shot learning experiments of Brown et al. demonstrate that examples and task descriptions supplied at inference can influence performance without task specific gradient updates. That finding establishes the practical significance of inference-time information while leaving open how a deployed system should select and maintain it. [Brown et al. (2020)](https://arxiv.org/abs/2005.14165)
 
-In an agentic setting, the selection problem compounds. An observation changes what is known, an action changes the environment. a revised requirement changes what counts as success, etc... Information useful at one step may become irrelevant or misleading at a future step. Context management therefore concerns an evolving relationship between the task, the environment, the model, and the system's accumulated records.
+Each step changes that question. Observations add evidence; actions alter the environment. A revised requirement changes what counts as success. Information useful earlier can become misleading later, so selection must account for the current task and the history behind it.
 
-The importance of this relationship should not be exaggerated into a claim that context explains every failure. Insufficient model capability, defective tools, ambiguous requirements, and execution errors can each determine the outcome. Context engineering provides a way to isolate the informational contribution to system behavior and to design the interfaces through which that contribution is controlled.
+Context is one contributor to failure. Model capability and defective tools can determine the outcome, as can ambiguous requirements or execution errors. Isolate the informational contribution so an observed error can lead to the right intervention.
 
 ## 2. A working definition
 
@@ -46,7 +50,7 @@ For this series, I will use a working definition: **context engineering is the d
 
 Anthropic describes context engineering as the ongoing curation of the information available to a model during inference. [Anthropic (2025)](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) This series examines the engineering responsibilities behind that process: selecting information, maintaining its validity as a task progresses, preserving its source and authority, and recording what the model received so that its behavior can be investigated.
 
-Four distinctions clarify that boundary. The examples below use a hypothetical task: a coding agent must migrate a service from API v1 to API v2 while preserving support for existing clients during a staged rollout. The examples illustrate conceptual distinctions; they are not reports of observed incidents or experimental results.
+Use a hypothetical migration to examine the boundary: a coding agent must introduce API v2 while supporting existing clients through a staged rollout. The examples are conceptual tests of the definition, with no claimed incidents or experimental results.
 
 ### 2.1 Available information and supplied information
 
@@ -82,7 +86,7 @@ Two incorrect migration patches can therefore have different explanations. In on
 
 ## 3. Intellectual foundations and adjacent practices
 
-Context engineering draws on established fields. Its analytical value lies in coordinating their methods around a particular system boundary rather than treating every contributing technique as a new invention.
+Context engineering draws on established methods. Its contribution here is to connect them at the interface where an application selects what the model receives.
 
 ### 3.1 Inference-time conditioning
 
@@ -94,7 +98,7 @@ This observation establishes why instructions, examples, evidence, and tool defi
 
 Prompt engineering addresses the formulation and organization of instructions, demonstrations, and output requirements. Those choices remain part of context engineering. The broader problem also includes selecting sources, tracking changing state, deciding when to retrieve, preserving information across interruptions, and enforcing the boundaries around external data.
 
-The distinction is one of scope rather than a clean historical replacement. A system can have an effective instruction prompt and an inadequate evidence pipeline. It can also retrieve excellent evidence while presenting ambiguous instructions. Evaluation must permit both possibilities.
+The practices overlap in scope. A system can have a clear instruction prompt and an inadequate evidence pipeline. It can also retrieve excellent evidence while presenting ambiguous instructions. Evaluation must permit both possibilities.
 
 ### 3.3 Information retrieval and retrieval-augmented generation
 
@@ -106,11 +110,11 @@ This boundary also distinguishes context engineering from the use of a vector da
 
 ### 3.4 Partial observability and state estimation
 
-An agent generally lacks complete access to the environment's true state. Observations can be incomplete or delayed, and an attempted action may have an uncertain outcome. The theory of partially observable Markov decision processes provides a formal reference for representing uncertainty through belief states and selecting actions from those beliefs. [Kaelbling, Littman, and Cassandra (1998)](https://people.csail.mit.edu/lpk/papers/aij98-pomdp.pdf)
+An agent usually observes only part of its environment, sometimes after a delay. A requested operation can have an uncertain outcome. Partially observable Markov decision processes provide a formal reference for maintaining beliefs over possible states and selecting actions from them. [Kaelbling, Littman, and Cassandra (1998)](https://people.csail.mit.edu/lpk/papers/aij98-pomdp.pdf)
 
-A practical agent's task snapshot is usually an approximation rather than a full probabilistic belief state. Its usefulness depends on what distinctions it preserves: accepted facts, hypotheses, unresolved outcomes, current constraints, and the observations needed to reduce uncertainty.
+A practical task snapshot usually approximates selected aspects of the agent’s knowledge and uncertainty. Its usefulness depends on what distinctions it preserves: accepted facts, hypotheses, unresolved outcomes, current constraints, and the observations needed to reduce uncertainty.
 
-Calling a summary a belief state does not confer the sufficiency properties of the formal construction. Those properties depend on modeling assumptions and correct state estimation. The connection is valuable because it makes information loss and uncertainty explicit research problems.
+A summary acquires no sufficiency guarantee from being called a belief state. Such guarantees require the formal modeling assumptions and correct state estimation. Use the connection to ask which uncertainty the practical representation preserves or loses.
 
 An uncertain tool outcome provides a concrete example. The agent submits a request to create a pull request, but the response times out. The external resource may have been created even though no confirmation arrived. A task snapshot that records "creation failed" discards a live possibility; one that records "creation outcome unknown; query the external system before retrying" preserves the distinction needed for recovery. This is a practical representation of uncertainty, without claiming to maintain a complete probability distribution over external states.
 
@@ -141,7 +145,7 @@ $$
 
 where $U_t$ denotes generated output and $\Gamma$ is the runtime's validation and action-selection procedure under capabilities $\mathcal{K}_t$. The runtime may reject a proposal, request more evidence, or perform no external action. Subsequent observations update the system's records and task state.
 
-These expressions define an analytical decomposition, not a validated theory of all agent behavior. They separate context construction, model generation, action authority, and state update so that each can be investigated.
+This proposed decomposition assigns separate roles to context construction and generation, then to runtime authorization and state update. It provides boundaries to investigate; it has not been validated as a general theory of agent behavior.
 
 The migration task gives each term an operational interpretation:
 
@@ -176,7 +180,7 @@ $$
 
 subject to authorization, retention, admissibility, and resource constraints. Here $\tau$ is a complete task trajectory, $V$ measures the declared outcome, $K$ measures resource expenditure, and $L$ measures latency. The model configuration and execution environment are held fixed when the experiment seeks to isolate $\pi$.
 
-The expression makes several commitments visible. Context is evaluated through task outcomes. Acquisition and transformation have costs. The effect of a decision may be delayed. Some conditions define admissibility and cannot be compensated for by a higher average quality score.
+Evaluate the policy through declared task outcomes and count acquisition and transformation costs. Include delayed consequences. Keep admissibility constraints explicit, because a higher average score cannot compensate for an unauthorized action.
 
 There is no universal choice of $V$, weights, or constraints. A research workflow and an interactive support tool may accept different latency and uncertainty. A comparison is meaningful only when those choices are declared.
 
@@ -188,7 +192,7 @@ Information theory supplies a useful question: which distinctions must a represe
 
 Applying that idea to agents requires care. The target may change after a new observation. Relevant items can be complementary or contradictory. The joint distribution needed for a formal information-theoretic objective is generally not available to an application.
 
-Consequently, a compact summary should not be called a sufficient representation merely because it is readable or answers one question correctly. Sufficiency must be defined relative to a task, model, information distribution, and acceptable error. Establishing useful approximations is part of the research agenda.
+Define sufficiency relative to a task and model, an information distribution, and an acceptable error. Readability or success on one question establishes less. Finding useful approximations to that definition is part of the research work.
 
 A summary sufficient to answer "which API is the migration targeting?" may contain only the target version. The same summary is insufficient to answer "may v1 be removed now?" That decision also requires the removal condition and evidence about the production clients. If the next observation reveals an unmigrated client, the information needed for continuation changes again. Compression must therefore be assessed against the decisions it is intended to support, including whether omitted details remain recoverable.
 
@@ -200,19 +204,19 @@ An evaluation using an ideal evidence package estimates what a model can do unde
 
 That difference creates a tractable engineering responsibility. If performance is strong with known sufficient evidence and weak with the actual construction pipeline, the discrepancy motivates investigation of acquisition, selection, freshness, or representation. If performance remains weak under the ideal condition, context management alone is unlikely to resolve the task.
 
-This distinction prevents both overconfidence in the model and overconfidence in infrastructure. Each requires a separate evidential basis.
+Evaluate model performance under sufficient evidence separately from the pipeline’s ability to construct that evidence package.
 
 ### 5.2 Input capacity does not establish effective information use
 
 Lost in the Middle reports position-sensitive performance on multi-document question answering and key-value retrieval for the systems studied. Its significance is methodological: evidence can be present in an accepted input while its placement affects task performance. [Liu et al. (2023)](https://arxiv.org/abs/2307.03172)
 
-RULER extends simple needle retrieval to configurable tasks including tracing and aggregation. NoLiMa tests retrieval where questions and evidence have minimal literal overlap. Together, these studies support evaluating different forms of long-context use rather than treating a nominal input limit as a complete capability specification. Their historical results do not determine the behavior of every later model. [Hsieh et al. (2024)](https://arxiv.org/abs/2404.06654), [Modarressi et al. (2025)](https://arxiv.org/abs/2502.05167)
+RULER extends simple needle retrieval to configurable tasks including tracing and aggregation. NoLiMa tests retrieval where questions and evidence have minimal literal overlap. Use these studies to design tests of distinct long-context capabilities beyond the endpoint’s input limit. Their historical results do not determine the behavior of every later model. [Hsieh et al. (2024)](https://arxiv.org/abs/2404.06654), [Modarressi et al. (2025)](https://arxiv.org/abs/2502.05167)
 
-Increasing input capacity can be valuable. It does not determine which sources are current, whether a contradiction is resolvable, or whether the supplied evidence supports an action. Those remain context-policy and evaluation questions.
+More capacity may help, but the application still has to establish source freshness and resolve authority. Test whether the selected evidence supports the proposed action.
 
 ### 5.3 Sequential action makes errors path-dependent
 
-In an agentic workflow, an interpretation can determine the next query, the next edit, and the information subsequently observed. An incorrect premise can therefore alter the trajectory instead of producing only a single incorrect answer.
+In an agentic workflow, an interpretation can determine the next query, the next edit, and the information subsequently observed. An incorrect premise can change later observations as well as the immediate answer.
 
 ReAct provides a research example of interleaving model reasoning and actions that gather external information. The resulting dependence between observations and subsequent decisions is precisely why context should be evaluated over complete trajectories as well as frozen invocations. [Yao et al. (2023)](https://arxiv.org/abs/2210.03629)
 
@@ -230,11 +234,11 @@ Suppose an agent remembers that the service's production interface is v1. After 
 
 ### 5.5 Information has computational and economic costs
 
-Acquisition, reranking, summarization, validation, storage, and inference all consume resources. Reducing the final input length can shift rather than eliminate cost if constructing that input requires additional model calls or repeated source expansion.
+Acquisition, reranking, summarization, validation, storage, and inference all consume resources. Reducing the final input can move cost into additional model calls or repeated source expansion. Include those operations in the comparison.
 
 PagedAttention studies KV-cache management in language-model serving and illustrates how retained inference state affects serving efficiency. That systems result concerns resource management, not the semantic adequacy of the retained information. The two dimensions should be measured independently and then considered together. [Kwon et al. (2023)](https://arxiv.org/abs/2309.06180)
 
-The practical objective is therefore a quality-resource tradeoff over the whole workflow. Token count alone cannot establish either efficiency or usefulness.
+Measure quality against resource use over the full workflow, including work spent constructing the final request.
 
 ### 5.6 Context is a security and authority boundary
 
@@ -242,7 +246,7 @@ An agent may encounter text controlled by an actor who lacks authority over the 
 
 This establishes a reason to preserve the distinction between evidence and instructions throughout transformations. A summary or agent handoff should not silently promote an external claim into an internal rule. Permission checks must also operate independently of a model's interpretation of the source.
 
-The security significance of context engineering thus extends from immediate model output to persistent effects: memory writes, delegated instructions, and actions performed under runtime credentials. Provenance helps trace these transitions; it does not itself authorize them.
+Follow external content through memory writes and delegated instructions into runtime actions. Preserve its origin across those transformations. Provenance supports investigation; runtime checks determine which effects are permitted.
 
 ### 5.7 Reproducible context makes system behavior investigable
 
@@ -254,9 +258,9 @@ Three guarantees should remain distinct: recovering the exact request, reconstru
 
 ## 6. What would count as scientific progress?
 
-The field needs operational definitions whose measurements correspond to meaningful claims. A relevance score is not the same as evidence sufficiency. Recall is not the same as correct application. A source citation is not proof that a conclusion follows from the source.
+Define measurements around the claim being tested. Relevance scoring measures a different property from evidence sufficiency. Recall establishes less than correct application, and a resolving citation still needs a claim-support check.
 
-A useful evaluation separates at least four questions:
+Evaluate these boundaries separately:
 
 | Evaluation level | Question | Representative evidence |
 | --- | --- | --- |
@@ -273,7 +277,7 @@ Model-based judges can help evaluate open-ended outcomes, but they require valid
 
 Several questions follow from this framework. Can the marginal value of evidence be estimated before inference? Which state representations remain adequate after a requirement changes? When does compression save resources without losing the distinctions needed later? How should authority and uncertainty survive delegation? Which findings transfer across models and task domains?
 
-These are research questions, not promises that a general context controller already solves them. A useful contribution could be a better policy, a counterexample to an assumed benefit, a benchmark that exposes a neglected failure, or a reproducible explanation of a system's operating limits.
+The proposed controller leaves these questions open. Useful contributions could improve a policy or expose a counterexample to it. A benchmark for a neglected failure, or a reproducible account of operating limits, can also advance the work.
 
 ## 7. The purpose of the series
 
@@ -281,9 +285,9 @@ This series proceeds from conceptual foundations to implementable components and
 
 The early articles examine context as infrastructure, budget allocation, model mechanics, and explicit task state. The middle articles develop retrieval, compilation, long-context diagnostics, compaction, memory, recovery, handoffs, and storage. The later articles examine security, experimental design, adaptive policies, and the conditions for an independently inspectable research contribution.
 
-The central proposition is that context constitutes an engineered interface between available information and situated model behavior. Its significance follows from the consequences of that interface for what a system can know, what it may treat as authoritative, how it continues over time, and how its decisions can be examined.
+Treat context as an interface between available information and the model’s next decision. Its design affects what the system can use, which sources may define the task, and how an engineer can later investigate the result.
 
-The first methodological commitment is therefore to identify the information required for a defensible task decision and retain a record of the information actually supplied. Comparing those two objects establishes a concrete starting point for the engineering and research developed in Article 01.
+For the first experiment, identify the evidence a defensible decision requires and save the exact request the model received. Compare them. Article 01 develops the components needed to investigate a mismatch.
 
 ## References and research notes
 

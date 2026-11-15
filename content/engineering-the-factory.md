@@ -1,147 +1,75 @@
-# Engineering the software factory
+# Why I'm building a software factory
 
 Jason Deutsch
 
-Building my own software factory is changing how I think about the engineer's job. I see it moving toward a higher level of abstraction: defining the production system that turns intent into working software, deciding what evidence makes its output acceptable, and improving that system when it fails.
+I'm building a software factory because I believe in the simple idea of abstraction leading to greater capability.
 
-The engineering responsibility grows with the scope of delegation. A person who writes a function reasons about its behavior. A person who designs a workflow that produces many changes must also reason about its inputs, permissions, failure paths, and the consequences of accepting its output. The implementation still matters; more of the engineer's attention moves to the conditions under which it is produced and trusted.
+Throughout the history of software development, and technology in general, we have used tools that simplify our current work. Faster compilers, IntelliSense, and Stack Overflow are examples. When something new makes the work faster or more efficient, we use it to take on more complicated work.
 
-This article is my current working model, informed by building the control plane, reusable agent packages, and evaluation tooling in my own project. My positions will change as I learn from the project and as the industry's understanding develops. The recommendations below are design judgments to test, rather than a settled blueprint for every organization.
+Kubernetes, for all its complexities, provides an abstraction for managing applications across a cluster of machines. Along with its ecosystem of tools, it allows teams to manage complex deployments in a simpler and more effective way than coordinating each part themselves. Abstracting the data center made managing complex software at scale simpler, so we built more complex software.
 
-![Article topic map summarizing the main topics and practical decisions.](writing/eng/posts/engineering%20the%20factory/images/article-overview.png)
-
-[Figure notes](writing/eng/posts/engineering%20the%20factory/images/Figure%20sources.md)
+So I'm exploring software factories professionally. Often, the best way to learn is to try something, run into challenges, learn what the wrong way is, and identify a way forward. The argument for getting professional experience before an MBA makes sense to me for a similar reason. Experience gives the discussion context.
 
 ## Key points
 
-- Software factory engineering moves more of our work toward specifications, interfaces, verification, and the behavior of the production system itself.
-- Start with a repeated delivery problem and define the system's responsibilities before choosing an agent framework.
-- Specifications should state intended behavior and the evidence required to accept a change.
-- Context needs ownership and freshness; larger prompts aren't a substitute for reliable information.
-- Use ordinary software for workflow rules and models for tasks requiring interpretation.
-- Verification, controlled delivery, and human intervention need to be designed together.
-- Measure the cost of accepted changes and failures across the process.
+- I am exploring whether abstraction can let engineers take on more complicated work.
+- Getting the boundaries between components right has been the biggest design challenge.
+- I am developing a common volume for task files, separate from the delivered code.
+- Deterministic workflow execution and an inbox system support the agents and human participation.
+- The evaluation results leave specific verification and cost questions open.
 
-## What building it has changed
+## Keeping the parts decoupled
 
-The project has made the work around generation much more concrete. I am engineering completion contracts, review handoffs, execution state, and the evidence needed to assess a run. Those concerns determine whether generated work can move through a dependable process.
+For this project, getting the abstractions between steps right was everything. One of my design goals is to keep each part componentized and decoupled. The biggest challenge has been finding the right way to design the agents for that, together with the gating and communication primitives that connect the steps.
 
-One October 29 evaluation illustrates the value of design review. The architecture reviewer caught ambiguity about an absent HTTP header and the loss of strict JSON validation in the proposed plan. The author revised the design, and the reviewer checked the corrections using stable finding identifiers. The useful output was a corrected contract before implementation depended on it. The workflow completed, but product checks were reviewer-reported; the operator did not independently test the product. [Project run assessment, October 29](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>).
+The abstraction I am exploring covers the work between an engineering request and an accepted change. It includes turning the request into a usable specification and plan, supplying context, and deciding how the result will be checked. I still need to understand the implementation well enough to investigate failures in any of those steps.
 
-A later run exposed a different boundary. The architect produced its documents but repeatedly failed to submit an accepted completion result: one side sent artifact strings while the controller expected objects. The controller then mislabeled the validation error as temporary unavailability and advised a retry. The workflow was eventually cancelled. Documents existed, but the production system could not accept the handoff. That failure directs attention to schema compatibility, error classification, and recovery behavior. It is an observation about that run, not a claim that the same defect remains in today's implementation. [Project run assessment, October 31](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261031-145233-git-hooks/assessment.md>).
+My controller owns workflow routes and accepted outcomes. Agent packages supply the behavior used within those steps. [Controller documentation](</Users/j/pragma/controls/README.md>) · [Registry documentation](</Users/j/pragma/registry/README.md>)
 
-The October 29 run also recorded reviewers attempting to read documents before publication. Starting agents concurrently had introduced a coordination obligation: consumers needed to know when usable inputs existed. Concurrency has to earn its place through the dependencies it can actually respect. [Project run assessment, remaining issues](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>).
+## A common source for task files
 
-Cost accounting needs the same care. That run reported about 2.74 million tokens, most of them cached input. Its dollar cost was unknown. The reported token total fell relative to the preceding run, but runtime, skills, and instructions had changed; a single comparison cannot identify the cause or establish an efficiency gain. I need repeatable evaluation and trustworthy accounting before claiming that the factory saves money. [Project run assessment, usage](</Users/j/pragma/evals_old/factory-go/runs/GO-001-20261029-082749-concurrent/assessment.md>).
+This is still in progress. I'm looking at a “bag of data” or “bag of context” approach where certain artifacts move through the workflow. Right now, that is represented as a volume. The focus has become a common source for task files and how agents get access to them.
 
-Building a software factory means taking responsibility for what happens between a request and a maintained production change. Choosing a model is one decision inside that job. The engineer still has to determine how the system handles conflicting requirements, failed checks, or a release that needs to be stopped.
+The factory produces specifications, plans, and task steps as it works. These task files are separate from the code being delivered. They give the agents material to work from as the task moves through the factory.
 
-A useful first version can be small. Take one repeated class of work, define its boundary, and engineer a dependable route through it. A sprawling framework with unclear failure handling is harder to trust than a narrow workflow whose behavior the team understands.
+I'm moving toward a model where each agent is deterministically given the location and access it needs. That gives me more flexibility than designing an agent to expect a specific absolute path, URL, or file.
 
-## Define what enters and what leaves
+## Execution and communication
 
-Suppose the first workflow handles routine dependency updates in one service. Its input includes the proposed version and update policy. Its output includes a patch, test results, and a record of the dependency changes. Acceptance requires a named set of checks; release follows the team's existing authorization process.
+Workflow execution is handled deterministically. I organize the workflow into stages made up of steps. Those steps can run sequentially or concurrently.
 
-That boundary excludes updates requiring application redesign. An agent can identify one of those cases and stop with an explanation. Stopping is a valid outcome when the alternative is guessing.
+For communication, I created an inbox system inspired by the actor model. It lets me address each agent individually or broadcast messages. This works for communication between agents and for human participation in the workflow.
 
-Assign an owner to the workflow itself. Someone has to maintain the environment and respond when the update process stops working. Otherwise a supposedly shared capability becomes a queue nobody owns.
+The current controller documentation says a package completes a step through an accepted MCP `step_result` message. Process exit, an idle turn, or a prose claim of completion cannot advance it.
 
-## Specify behavior before generating code
+A completed step may establish that documents were submitted or that a reviewer returned findings. Product acceptance requires its own checks.
 
-A task needs enough detail to tell an executor what to change and a reviewer how to judge the result. Include constraints that could invalidate an otherwise plausible implementation.
+## Learning from the runs
 
-For an API change, that might mean preserving response behavior for existing clients and meeting a latency budget. Translate stable requirements into contract tests where possible. Keep the reasons behind those tests available, because a passing suite cannot cover an intent nobody expressed.
+The evaluation task adds optional `Idempotency-Key` support to `POST /tasks` in a small Go service. Repeating a valid request with the same key and body should return the original response without creating another task. The brief also requires preserving the existing Go version unless a change is necessary and a human approves. [GO-001 brief](</Users/j/pragma/evals/scenario/brief.md>)
 
-Separate a proposed plan from accepted requirements. An agent may discover a better implementation approach. It should not silently redefine the customer requirement to suit that approach.
+On November 1, my factory marked the workflow complete. The separate grader passed all ten acceptance cases, then failed the result on `go vet`.
 
-Security belongs in the same design. NIST's final SSDF version 1.1 describes practices that can be integrated into different development lifecycles. It is guidance for secure development, not a certification of an agent workflow. [NIST SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final)
+The saved diagnostic identified four uses of an API requiring Go 1.25 or later. The module declared Go 1.22. The workflow had reached its completed state, including review and approval, while the grader still had a reason to reject the candidate. [November 1 result](</Users/j/pragma/evals/runs/GO-001-20261101T211413927528Z-bee829/result.json>) · [Saved vet diagnostic](</Users/j/pragma/evals/runs/GO-001-20261101T211413927528Z-bee829/vet.stderr>)
 
-## Treat context as maintained infrastructure
+I have to decide when a check can veto completion and what happens after that veto. Repairing the code creates another candidate, which needs fresh evidence tied to its revision.
 
-A context system should help an executor find authoritative information about the part of the system it is changing. Architecture decisions need dates and owners. Generated summaries should retain links to the source and indicate when they were refreshed.
+The November 14 design review recorded a correction from `go test taskapi_test.go` to `go test .`. The original command omitted the source package definitions the test file depended on. The reviewer reported checking that the corrected command worked. That was useful design-stage evidence, with the later implementation still needing its own checks. [Architecture review](</Users/j/pragma/evals/.factory/executions/3141aac4-34cd-40d5-8436-f2552bfc6dfd/files/reviews/architecture.md>)
 
-Conflicts deserve explicit handling. A current contract and an old design document may disagree. The agent needs a rule for identifying the authority or a way to ask the owner. Returning both documents without explanation exports the problem into every execution.
+The November 14 workflow also completed, but independent product grading was recorded as unavailable. Its newer evaluation protocol uses Factory's public interface, which does not expose the required acceptance operation. The earlier runs used a local grader. Those results cannot be pooled as if they measured the same thing. [November 14 result](</Users/j/pragma/evals/runs/GO-001-20261114T202629280058Z-578ee3/result.json>) · [Evaluation protocol](</Users/j/pragma/evals/README.md>)
 
-More text is not automatically better. Liu and colleagues found positional sensitivity in long-context retrieval tasks: models did not use information uniformly across an input. That older study doesn't quantify today's coding-agent behavior, but it supports evaluating retrieval rather than assuming capacity guarantees comprehension. [Lost in the Middle](https://arxiv.org/abs/2307.03172)
+## What I want to find out
 
-Repository instructions need the same discipline. Gloaguen and colleagues' 2026 evaluation found that context files did not generally improve task success in their tested settings, while increasing inference cost. Test useful guidance against real tasks and remove material that adds cost without helping. [Evaluating AGENTS.md](https://arxiv.org/abs/2602.11988)
+I want to find out whether this abstraction makes subsequent changes easier to specify, verify, and maintain, and whether it lets me take on more complicated work.
 
-## Coordinate execution with ordinary software
+The collected results leave dollar cost unknown. Their token totals span different input variants and evaluation protocols, so I cannot use them to establish an efficiency gain. Even a complete model bill would leave the time spent specifying and reviewing work, repairing failures, and maintaining the factory to account for. [Recorded costs and limits](Supporting%20notes.md#resource-accounting)
 
-Decompose work around stable interfaces and explicit dependencies. If a migration changes both producer and consumer, establish the compatibility sequence before running either change. Independent work can run concurrently; dependent work needs coordination.
+A recurring failure might justify better context or a tool change. It might belong in an acceptance test. Each proposed improvement needs representative tasks that show whether it helps and whether it damages other work.
 
-Keep workflow state outside the agent's conversation. Record which revision a task started from, what artifacts it produced, and which checks ran against that result. A resumed task should not rely on a model remembering whether a deployment happened.
-
-Rules such as retry limits, timeouts, and approval requirements are ordinary software. Let the workflow enforce them. Use a model to interpret an unfamiliar failure or propose a repair when that requires judgment.
-
-That separation is reflected in the current project structure. The controller owns workflow routing and accepted outcomes; reusable packages supply agent behavior. Optional Git hooks handle worktree preparation and stage commits without asking a model to remember those lifecycle operations. These are implementation choices I can inspect and revise independently. [Controller documentation](</Users/j/pragma/controls/README.md>); [Registry documentation](</Users/j/pragma/registry/README.md>).
-
-Agentless demonstrates that a constrained sequence can be competitive on issue-repair benchmarks. It provides a reason to compare a simple process with a more elaborate one, rather than treating orchestration complexity as capability. [Agentless](https://arxiv.org/abs/2407.01489)
-
-![A matrix distinguishes what five evidence types establish and what remains unverified.](verification-scope.png)
-
-*Verification map: checks establish scoped claims, not complete correctness. Informed by [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final) and [Gu et al.](https://arxiv.org/pdf/2503.22625).*
-
-[Figure sources and methodology](writing/eng/posts/engineering%20the%20factory/images/Figure%20sources.md)
-
-## Build verification around the claim being made
-
-Start with inexpensive checks that can catch mechanical mistakes. Then evaluate behavior and the properties that matter to the system. A build establishes that a candidate builds; it says little about whether an authorization rule is correct.
-
-| Evidence | What it helps establish | What remains open |
-| --- | --- | --- |
-| Build and static checks | Basic consistency with configured rules | Intended behavior |
-| Unit and contract tests | Specified behavior at selected boundaries | Untested cases and combined changes |
-| System and security checks | Selected operational properties | Conditions the checks don't model |
-| Human review | Interpretation and consequential tradeoffs | Human mistakes and missing context |
-| Controlled production rollout | Behavior under actual use | Rare or delayed failures |
-
-Use AI review as another source of feedback. It should not be the only evidence for a claim made by the generator, particularly when both use the same assumptions.
-
-SWE-bench evaluates patches against repository tests for issue-resolution tasks. It is a useful example of executable evaluation, with a boundary much narrower than a complete release decision. [Princeton's benchmark explanation](https://pli.princeton.edu/blog/2023/swe-bench-can-language-models-resolve-real-world-github-issues)
-
-## Design autonomy with recovery
-
-![Candidates pass evidence and authorization gates before limited deployment, comparison, expansion, or recovery.](controlled-rollout.png)
-
-*Proposed rollout workflow based on [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final) and [Google SRE](https://sre.google/workbook/canarying-releases/). Recovery depends on the change; rollback is not always sufficient.*
-
-[Figure sources and methodology](writing/eng/posts/engineering%20the%20factory/images/Figure%20sources.md)
-
-Before granting a workflow more authority, ask how the team will detect and recover from a bad result. A reversible configuration change with strong checks is different from a destructive data migration. A nominal rollback command may not undo writes already made to a database.
-
-Use progressive rollout where the service and its traffic allow it. Google's SRE workbook describes canarying as a limited deployment evaluated before wider release. That provides production evidence while reducing exposure; it does not eliminate deployment risk. [Canarying releases](https://sre.google/workbook/canarying-releases/)
-
-Permissions should match the task. Execution needs an identity and an audit trail. Where a policy must hold, enforce it at the tool or deployment boundary instead of relying on a prompt to remember it.
-
-My current local runner also illustrates the gap between a desired control and an implemented one: it executes with the host user's permissions and is explicitly documented as not being a sandbox. A declared task boundary does not establish isolation. That limit belongs in the operating model and in any claims I make about the system. [Current runner limits](</Users/j/pragma/controls/README.md>).
-
-## Give humans a usable way to intervene
-
-An escalation should explain the unresolved question and provide the evidence needed to answer it. A transcript dump leaves the engineer to reconstruct the work. A concise account of the failing check, attempted repairs, and current diff is more useful.
-
-Bainbridge's *Ironies of Automation* warns that automation can leave operators with difficult abnormal conditions. Although it predates coding agents by decades, the concern applies when a workflow expects a person to rescue a failure they haven't been following. [Automatica](https://doi.org/10.1016/0005-1098%2883%2990046-8)
-
-Make it possible to stop work and inspect state. Keep the engineer's authority clear. A human approval step needs time and information to function.
-
-## Improve the system from its failures
-
-Record execution costs and failures, including unsuccessful tasks. Measure time to an accepted change, review effort, and escaped defects. An impressive first-pass rate can hide a large cleanup burden if the acceptance checks are weak.
-
-When a failure recurs, decide whether the fix belongs in context, a tool, or a test. Keep a representative set of past tasks to check that the improvement helps without damaging other work. Evaluate changes to the factory itself before expanding their use.
-
-## Engineering at a higher level of abstraction
-
-The shift I am arguing for changes the unit of engineering attention. Alongside the individual implementation, we design the specifications, tools, execution boundaries, and checks that shape a whole class of implementations. A recurring failure becomes a question about the production system: which assumption, interface, or missing check allowed it through?
-
-That requires engineers to stay close enough to the code and operating environment to investigate failures. Delegation without that understanding makes the system harder to repair. Higher abstraction brings a wider responsibility for understanding how the layers interact.
-
-For my project, the useful test of this direction is whether improvements to the factory make subsequent work easier to specify, verify, and maintain. I want to judge that through accepted changes, recovery effort, and total cost. More autonomous execution is useful only when the surrounding system can support it.
-
-Start with a boundary you can support. Broaden it when evidence shows that the system handles the work and the team can recover when it doesn't. I expect both that boundary and my recommendations to change as the project exposes weaknesses and better evidence becomes available. Engineering the factory includes revising the engineering model itself.
-
----
+I expect the boundary of what I can delegate to change as the project develops. The current evaluation leaves me with a specific interface to build: a supported independent acceptance check whose result identifies the candidate revision. The November 14 run cannot supply that evidence.
 
 ### Research and scope
 
-The project observations above come from recorded evaluations and current repository documentation. They do not establish general reliability, productivity gains, or ROI. Other examples remain illustrative design proposals. Benchmarks and older automation research do not validate the factory as a whole. NIST version status reflects the earlier source review, not a new standards check for this revision. Project links point to local evidence and need publishable equivalents before external publication. See [References.md](References.md) for details.
+This is an ongoing project. The common-volume design is still in progress. The evaluation records support the specific observations above; they do not establish general reliability, productivity gains, or ROI. Reviewer findings remain attributed assessments. No new factory run or product test was performed for this revision.
+
+[Supporting notes](Supporting%20notes.md) retain the detailed evaluation records, technical discussion, and conceptual figures. [References](References.md) record source-review limits. Local project links need reviewed public equivalents before external publication.

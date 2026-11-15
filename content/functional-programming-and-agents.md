@@ -1,18 +1,18 @@
 # What functional programming taught me about agentic systems
 
-Consider an agent that updates a dependency in a service, runs the required checks, and opens a pull request. The pull request is created, but the response never reaches the agent. The tool call times out. What should happen next?
+A dependency-update agent runs the required checks and opens a pull request, but never receives the response. The call times out. Before it tries again, the application needs to establish whether the pull request already exists.
 
-Retrying sounds reasonable until it creates a second pull request. Asking the model to reason harder doesn't establish whether the first operation succeeded. The system needs a record of the operation and a way to reconcile that record with the outside world.
+A blind retry can create a duplicate. More model reasoning cannot supply the missing confirmation. Persist the intended operation and reconcile it with the remote service.
 
-This is the kind of problem that makes functional programming feel relevant to agentic system design.
+Functional programming offers useful ways to structure the decisions around that uncertain operation.
 
 I used to be a very passionate functional programmer. I went deep with Haskell. I enjoyed Elixir too, and think it's a great language, though my preference was always for pure functional programming. I even explored Elm for a time. Its model-view-update architecture influenced Redux, which brought those ideas into the React ecosystem. [Redux's account of its influences](https://redux.js.org/understanding/history-and-design/prior-art)
 
-The appeal had two parts. One was thinking in a rich type system: expressing the shape of a problem in types, then letting the compiler help check that the pieces fit together. Haskell's Hindley-Milner foundation, extended with type classes, made that especially compelling. Type inference meant I could work with polymorphic functions without spelling out every type along the way. [Haskell 2010 report, section 4.1](https://www.haskell.org/onlinereport/haskell2010/haskellch4.html)
+I liked expressing a problem in types and letting the compiler check how the pieces fit. Haskell’s Hindley-Milner foundation, extended with type classes, made polymorphic code especially satisfying: inference spared me from spelling out every type along the way. [Haskell 2010 report, section 4.1](https://www.haskell.org/onlinereport/haskell2010/haskellch4.html)
 
 The other was equational reasoning. With pure code, I could substitute an expression with its value and reason about a larger computation through smaller equalities. I didn't have to mentally execute the whole application and track hidden mutations to understand a local transformation. There was something deeply appealing about code I could approach mathematically.
 
-Those two habits matter when designing agentic systems. Types help express what a workflow step is allowed to consume and produce. Purity gives us parts of the system whose behavior we can reason about independently. A model call introduces uncertainty, but the rules around its result can still be explicit and precise.
+Types can express the inputs and results a workflow step accepts. Pure functions let us reason about parts of that workflow independently. A model call remains uncertain, while the rules consuming its response can be explicit enough to inspect.
 
 Once a proposed action can change a repository or a customer record, that precision has practical consequences. We need to know what evidence permits the action, what state changes when it runs, and what happens if we never receive confirmation.
 
@@ -50,7 +50,7 @@ acceptChecks :: ScopedPatch -> CheckReport -> Either WorkflowError CheckedPatch
 
 `acceptChecks` must verify that the report identifies the same resulting revision and the required checks all passed. The `IO` signatures make external interaction visible; the pure signatures make a narrower promise about what those functions can depend on.
 
-That leaves a smaller part of the system exposed to uncertainty. It also gives us a useful place to investigate a failure: did the model produce a bad proposal, did a tool fail, or did the acceptance rule allow something it should have rejected?
+This keeps uncertainty at named interfaces. During an investigation, inspect the proposal and tool result separately from the acceptance rule. Each can fail for a different reason.
 
 ## Reason about the decision with equations
 
@@ -72,7 +72,7 @@ publicationAllowed rev report approval
   == True
 ```
 
-These lines show equalities for those fixed inputs, rather than a program that performs publication. Within that policy calculation, we can replace `evidenceMatches rev report` with `True` without changing its meaning. If approval refers to an older revision, the corresponding equality becomes `False`, and so does the decision. No repository or model service needs to be running to understand why.
+For these fixed inputs, the lines show equalities within the policy calculation. We can substitute `True` for `evidenceMatches rev report` without changing the expression’s meaning. An approval for an older revision makes its equality `False`, so the decision is false too. This reasoning needs no running repository or model service.
 
 Recorded inputs let us evaluate the same rule later. If the rule itself changes, we can also compare the old and new decisions against the same evidence. That makes a policy regression easier to investigate.
 
@@ -132,13 +132,13 @@ scopeProposal policy proposal = proposal >>= checkProposal policy
 
 There are laws behind this abstraction. Introducing a value with `pure` and immediately binding it to a function must behave like calling that function directly. Binding a computation to `pure` must preserve it. Regrouping a chain of binds must preserve its meaning without changing the order of dependent steps. These laws make composition predictable; Haskell's type checker does not prove that a custom instance obeys them. [Haskell's Monad documentation](https://hackage.haskell.org/package/base/docs/Control-Monad.html)
 
-That is the reason for the abstraction: define the sequencing behavior once, then reuse it throughout a workflow and through generic combinators. Production Haskell already provides `Either` for this failure-handling case. `Maybe` handles possible absence, while `IO` represents external actions. Haskell uses monadic composition to integrate I/O with its pure language. [Haskell 2010 report, chapter 7](https://www.haskell.org/definition/haskell2010.pdf)
+Define the sequencing rule once, then use it throughout the workflow and through generic combinators. Production Haskell provides `Either` for this failure-handling case. `Maybe` represents possible absence; `IO` represents external actions and integrates them with the pure language. [Haskell 2010 report, chapter 7](https://www.haskell.org/definition/haskell2010.pdf)
 
-These guarantees have limits. Monads don't make a model deterministic. They don't make an API call safe to retry, either. The list monad's representation of multiple possibilities is also different from sampling a response from a language model. The connection is about composing computations while keeping their context visible. A monad is not a scheduler: concurrency, timeouts, and retry policies still need concrete implementations.
+This composition leaves model nondeterminism and API retry safety unresolved. The list monad represents multiple possibilities, which differs from sampling a language-model response. A monad makes the computational context explicit; the runtime still implements scheduling and timeouts, with a separate retry policy.
 
 For an agent workflow, a step might return a successful proposal, a recoverable tool failure, or a request for human input. The next step should depend on which result occurred. A missing approval cannot quietly become an empty string that the next prompt interprets however it likes.
 
-We don't need to implement a monad transformer stack to benefit from this. We do need a consistent answer to what each step returns and how that result controls the next step.
+A small workflow can use consistent tagged results without a monad transformer stack. Specify how each result controls the next step.
 
 Start with the pure part. Suppose publication requires a valid scope, passing checks, and approval for the checked revision. Using the standard `Either` type, the same dependency update moves through three checks:
 
@@ -194,7 +194,7 @@ Another useful functional programming habit is representing work as data.
 
 An agent can produce a proposed action containing a tool name, arguments, and the revision it expects to modify. The runtime can inspect that proposal before executing it. It can check permissions, attach an operation identifier, and reject stale assumptions.
 
-The distinction is concrete: a proposal to open a pull request should be inspectable before the request is created.
+Inspect the proposal to open a pull request before sending the create request.
 
 Here is a small command type for the publication boundary:
 
@@ -228,7 +228,7 @@ model response
     → execute the authorized action
 ```
 
-This is a proposed architecture, not a claim that each arrow is pure. Applying a patch and running tests are effects too. The point is that the system names them and gives each one a contract.
+Several arrows in this proposed architecture perform effects, including patch application and test execution. Name those operations and give each a contract so their observations can support later decisions.
 
 It also creates a way to test workflow rules without performing the real action. A test interpreter can return a timeout or a permission failure. We can then check that the workflow stops or reconciles state as intended, without creating a real pull request.
 
@@ -250,7 +250,7 @@ AuthorizedPatch → Published | PublicationUnknown | PublicationFailed
 
 Types can help enforce the allowed transitions inside the program. They cannot establish that a model's claim is true or that an external service obeyed the contract. Untrusted inputs still need runtime validation. The evidence behind a `CheckedPatch` must refer to the actual patch being published; a check against an earlier revision isn't enough.
 
-The benefit is having fewer places where the program can accidentally skip a required decision.
+These distinctions reduce the places where code can accidentally skip a required decision.
 
 A small module can enforce that distinction without advanced type machinery:
 
@@ -283,7 +283,7 @@ data PublishResult
   | PublicationFailed String
 ```
 
-This is a module interface sketch; the function bodies are omitted. Importing code cannot construct an `AuthorizedPatch` directly or pass a `ProposedPatch` to `planPublication`. The private implementation is responsible for checking the evidence and binding approval to that revision. If approval can expire or be revoked, the executor must revalidate it at execution time. The companion uses a fixed approval snapshot to keep that separate production concern out of the demonstration. This use of hidden constructors is Haskell's ordinary support for abstract data types, rather than a guarantee supplied by the model. [Haskell report: abstract data types](https://www.haskell.org/onlinereport/haskell2010/haskellch5.html#sect5.8)
+This is a module interface sketch; the function bodies are omitted. Importing code cannot construct an `AuthorizedPatch` directly or pass a `ProposedPatch` to `planPublication`. The private implementation is responsible for checking the evidence and binding approval to that revision. If approval can expire or be revoked, the executor must revalidate it at execution time. The companion uses a fixed approval snapshot to keep that separate production concern out of the demonstration. Haskell’s abstract data types enforce constructor hiding through the module interface. [Haskell report: abstract data types](https://www.haskell.org/onlinereport/haskell2010/haskellch5.html#sect5.8)
 
 ## Replay the record, then decide what to retry
 
@@ -330,7 +330,7 @@ replay = foldM step Ready
 
 A timeout leaves the operation uncertain. A later confirmation can resolve it. Mismatched operation identifiers and invalid event orderings return an error. A production event store also needs durable, ordered appends and concurrency control; this reducer only demonstrates how recorded facts determine state.
 
-That gives us a way to replay the coordination logic with recorded observations. Calling the model again is a new generation attempt, with a potentially different answer. Replaying a recorded response serves a different purpose: understanding why the workflow made a particular decision.
+Recorded observations let us replay the coordination logic and investigate its decisions. Calling the model again performs a new generation attempt and may return a different answer.
 
 Temporal illustrates a related boundary in durable execution. Its workflow definitions must be deterministic so execution can be reconstructed from history; external effects belong in activities whose results are recorded. This is a useful engineering reference for the separation, even when a system uses a different runtime. [Temporal workflow documentation](https://docs.temporal.io/workflow-definition)
 
@@ -370,7 +370,7 @@ Pure coordination logic makes recovery easier to reason about. The external effe
 
 My preference for pure FP doesn't diminish what Elixir brings to this discussion. Its Erlang foundation puts process isolation and failure handling close to the center of system design. Elixir's processes run concurrently and communicate through messages, as its own documentation explains. [Elixir: processes](https://hexdocs.pm/elixir/processes.html) Armstrong's thesis develops the underlying Erlang approach to isolation and failure handling. [Making reliable distributed systems](https://erlang.org/download/armstrong_thesis_2003.pdf)
 
-There is a useful lesson there for systems with several agents: give each worker a defined responsibility and communicate through explicit messages. For our dependency update, one worker can interpret release notes and prepare the candidate patch. Test workers return evidence for its revision; the coordinator owns the decision to open the pull request. Shared mutable context makes those responsibilities harder to follow.
+Give each worker a defined responsibility and explicit message interface. For the dependency update, one worker interprets release notes and prepares the patch. Test workers return evidence for its revision. The coordinator owns publication, with that responsibility preserved outside shared conversational context.
 
 Isolation also needs to exist in the resources the workers use. Two separate conversations editing the same checkout still share mutable files. Give concurrent workers separate checkouts or another explicit ownership mechanism.
 
@@ -378,11 +378,11 @@ Restarting a worker doesn't undo its external effects. A restarted agent needs t
 
 ## Use the abstraction where it earns its place
 
-There is a temptation, especially if you enjoyed Haskell, to turn these connections into an elaborate framework. A small workflow may only need tagged result types and a few explicit transitions. Persistence and more sophisticated effect handling should answer actual recovery needs.
+My enjoyment of Haskell can make an elaborate framework tempting. A small workflow may need only tagged results and a few transitions. Add persistence or effect machinery to meet a concrete recovery requirement.
 
 The practical starting point is one action that can change the outside world. Describe it as data. Define the evidence and authority required to execute it. Decide how the system will discover whether it happened after a timeout.
 
-That is where functional programming has something useful to say about agents. We can give uncertain computations a precise place in a system, then make the decisions around them understandable enough to inspect, test, and repair.
+Put the uncertain operation behind an explicit interface, then make its surrounding decisions inspectable. For the timed-out pull request, that means keeping the operation identity and resolving the remote outcome before issuing another create request.
 
 ## Try the workflow
 
