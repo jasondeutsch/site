@@ -1,0 +1,20 @@
+{
+  "name": "jason-deutsch-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node scripts/render-articles.mjs",
+    "check": "node scripts/render-articles.mjs --check",
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/render-articles.mjs --build",
+    "package": "node scripts/render-articles.mjs --package"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "marked": "17.0.5",
+    "katex": "0.16.22",
+    "parse5": "7.3.0"
+  }
+}

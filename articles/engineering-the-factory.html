@@ -1,109 +1,105 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Engineering the software factory — Jason Deutsch</title><link rel="stylesheet" href="../styles.css?v=8d2e1b60face"></head><body><a class="skip" href="#main">Skip to content</a><div class="shell"><main id="main" class="article"><a class="back" href="../index.html#writing">← All writing</a><h1>Engineering the software factory</h1><div class="meta">Jason Deutsch · <time datetime="2026-10-01">October 1, 2026</time></div>
-<p>Building my own software factory has moved more of my attention to the system around the code. I am defining how intent becomes an implementation, which evidence makes that implementation acceptable, and how the process should change after a failure.</p>
-<p>Delegating a function requires understanding its behavior. Delegating a workflow that produces many changes adds responsibility for inputs and permissions, failure handling, and acceptance decisions. I still need to understand the implementation, including the conditions under which the factory produces and trusts it.</p>
-<p>The control plane, reusable agent packages, and evaluation tooling in my project inform this working model. I expect it to change as the project exposes mistakes and the industry learns more. Treat the recommendations as design judgments to test.</p>
-<p><img src="../assets/engineering-the-factory/images/article-overview.png" alt="Article topic map summarizing the main topics and practical decisions." loading="lazy"></p>
-<p><a href="../assets/engineering-the-factory/images/Figure%20sources.md">Figure notes</a></p>
-<h2>Key points</h2>
-<ul>
-<li>Software factory engineering moves more of our work toward specifications, interfaces, verification, and the behavior of the production system itself.</li>
-<li>Start with a repeated delivery problem and define the system&#39;s responsibilities before choosing an agent framework.</li>
-<li>Specifications should state intended behavior and the evidence required to accept a change.</li>
-<li>Context needs ownership and freshness; larger prompts aren&#39;t a substitute for reliable information.</li>
-<li>Use ordinary software for workflow rules and models for tasks requiring interpretation.</li>
-<li>Verification, controlled delivery, and human intervention need to be designed together.</li>
-<li>Measure the cost of accepted changes and failures across the process.</li>
-</ul>
-<h2>What building it has changed</h2>
-<p>The surrounding work is now concrete: completion contracts determine what a run can hand off, and execution state records what happened. Reviewers need evidence they can assess before generated work moves forward.</p>
-<p>One October 29 evaluation illustrates the value of design review. The architecture reviewer caught ambiguity about an absent HTTP header and the loss of strict JSON validation in the proposed plan. The author revised the design, and the reviewer checked the corrections using stable finding identifiers. The useful output was a corrected contract before implementation depended on it. The workflow completed, but product checks were reviewer-reported; the operator did not independently test the product. Project run assessment, October 29 <span class="muted">(local source; not public)</span>.</p>
-<p>A later run exposed a different boundary. The architect produced its documents but repeatedly failed to submit an accepted completion result: one side sent artifact strings while the controller expected objects. The controller then mislabeled the validation error as temporary unavailability and advised a retry. The workflow was eventually cancelled. Documents existed, but the production system could not accept the handoff. That failure directs attention to schema compatibility, error classification, and recovery behavior. It is an observation about that run, not a claim that the same defect remains in today&#39;s implementation. Project run assessment, October 31 <span class="muted">(local source; not public)</span>.</p>
-<p>The October 29 run also recorded reviewers attempting to read documents before publication. Starting agents concurrently had introduced a coordination obligation: consumers needed to know when usable inputs existed. Concurrency has to earn its place through the dependencies it can actually respect. Project run assessment, remaining issues <span class="muted">(local source; not public)</span>.</p>
-<p>Cost accounting needs the same care. That run reported about 2.74 million tokens, most of them cached input. Its dollar cost was unknown. The reported token total fell relative to the preceding run, but runtime, skills, and instructions had changed; a single comparison cannot identify the cause or establish an efficiency gain. I need repeatable evaluation and trustworthy accounting before claiming that the factory saves money. Project run assessment, usage <span class="muted">(local source; not public)</span>.</p>
-<p>Model selection is one decision in a process that runs from request to maintained production change. I also have to decide how the factory handles conflicting requirements, responds to failed checks, and stops a release.</p>
-<p>Start with one repeated class of work and define a boundary the team can support. Engineer its failure path before broadening the framework. A narrow workflow is easier to investigate when its behavior and ownership are clear.</p>
-<h2>Define what enters and what leaves</h2>
-<p>Suppose the first workflow handles routine dependency updates in one service. Its input includes the proposed version and update policy. Its output includes a patch, test results, and a record of the dependency changes. Acceptance requires a named set of checks; release follows the team&#39;s existing authorization process.</p>
-<p>Route updates requiring application redesign out of this workflow. The agent can identify the unsupported case, explain it, and stop for a decision.</p>
-<p>Assign an owner to the workflow itself. Someone has to maintain the environment and respond when the update process stops working. Otherwise a supposedly shared capability becomes a queue nobody owns.</p>
-<h2>Specify behavior before generating code</h2>
-<p>A task needs enough detail to tell an executor what to change and a reviewer how to judge the result. Include constraints that could invalidate an otherwise plausible implementation.</p>
-<p>For an API change, that might mean preserving response behavior for existing clients and meeting a latency budget. Translate stable requirements into contract tests where possible. Keep the reasons behind those tests available, because a passing suite cannot cover an intent nobody expressed.</p>
-<p>Separate a proposed plan from accepted requirements. An agent may discover a better implementation approach. It should not silently redefine the customer requirement to suit that approach.</p>
-<p>Security belongs in the same design. NIST&#39;s final SSDF version 1.1 describes practices that can be integrated into different development lifecycles. It is guidance for secure development, not a certification of an agent workflow. <a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SP 800-218</a></p>
-<h2>Treat context as maintained infrastructure</h2>
-<p>A context system should help an executor find authoritative information about the part of the system it is changing. Architecture decisions need dates and owners. Generated summaries should retain links to the source and indicate when they were refreshed.</p>
-<p>Conflicts deserve explicit handling. A current contract and an old design document may disagree. The agent needs a rule for identifying the authority or a way to ask the owner. Returning both documents without explanation exports the problem into every execution.</p>
-<p>Liu and colleagues found positional sensitivity in long-context retrieval tasks: models did not use information uniformly across the input. The study describes older models, so it cannot quantify current coding-agent behavior. Use it as a reason to evaluate evidence retrieval and use on your tasks. <a href="https://arxiv.org/abs/2307.03172">Lost in the Middle</a></p>
-<p>Repository instructions need the same discipline. Gloaguen and colleagues&#39; 2026 evaluation found that context files did not generally improve task success in their tested settings, while increasing inference cost. Test useful guidance against real tasks and remove material that adds cost without helping. <a href="https://arxiv.org/abs/2602.11988">Evaluating AGENTS.md</a></p>
-<h2>Coordinate execution with ordinary software</h2>
-<p>Decompose work around stable interfaces and explicit dependencies. If a migration changes both producer and consumer, establish the compatibility sequence before running either change. Independent work can run concurrently; dependent work needs coordination.</p>
-<p>Keep workflow state outside the agent&#39;s conversation. Record which revision a task started from, what artifacts it produced, and which checks ran against that result. A resumed task should not rely on a model remembering whether a deployment happened.</p>
-<p>Rules such as retry limits, timeouts, and approval requirements are ordinary software. Let the workflow enforce them. Use a model to interpret an unfamiliar failure or propose a repair when that requires judgment.</p>
-<p>In my current project, the controller routes work and accepts outcomes; reusable packages supply agent behavior. Optional Git hooks prepare worktrees and create stage commits. Keeping these lifecycle operations in ordinary code lets me inspect and revise them independently of the agent instructions. Controller documentation <span class="muted">(local source; not public)</span> Registry documentation <span class="muted">(local source; not public)</span></p>
-<p>Agentless demonstrates that a constrained sequence can be competitive on issue-repair benchmarks. Compare that constrained process with more elaborate orchestration on the team’s task distribution. <a href="https://arxiv.org/abs/2407.01489">Agentless</a></p>
-<p><img src="../assets/engineering-the-factory/images/verification-scope.png" alt="A matrix distinguishes what five evidence types establish and what remains unverified." loading="lazy"></p>
-<p><em>Verification map: checks establish scoped claims, not complete correctness. Informed by <a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SSDF</a> and <a href="https://arxiv.org/pdf/2503.22625">Gu et al.</a>.</em></p>
-<p><a href="../assets/engineering-the-factory/images/Figure%20sources.md">Figure sources and methodology</a></p>
-<h2>Build verification around the claim being made</h2>
-<p>Start with inexpensive checks that can catch mechanical mistakes. Then evaluate behavior and the properties that matter to the system. A build establishes that a candidate builds; it says little about whether an authorization rule is correct.</p>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Building a software factory: contracts, context, and verification — Jason Deutsch</title><link rel="stylesheet" href="../styles.css?v=8d2e1b60face"></head><body><a class="skip" href="#main">Skip to content</a><div class="shell"><main id="main" class="article"><a class="back" href="../index.html#writing">← All writing</a><h1>Building a software factory: contracts, context, and verification</h1><div class="meta">Jason Deutsch · <time datetime="2026-10-01">October 1, 2026</time></div>
+<p>I'm building a software factory because I believe in the simple idea of abstraction leading to greater capability. When tools simplify work we already know how to do, we can use that capacity to take on more complicated work. Kubernetes, for all its complexities, gives teams an abstraction for managing applications across a cluster of machines. Its ecosystem makes deployments possible that would be difficult to coordinate machine by machine.</p>
+<p>I'm exploring whether a similar abstraction can cover the work between an engineering request and an accepted software change. That means specifying the task, supplying its context, executing a workflow, and establishing what evidence is sufficient to accept the result. Professionally and academically, building the system gives me a way to investigate those questions through actual failures and revisions.</p>
+<p>Getting the abstractions between steps right has been the biggest challenge. I want the components decoupled so that changing an agent's implementation does not require redesigning how the workflow schedules work or accepts results. The difficult part has been designing the gates and communication primitives that make that separation workable.</p>
+<h2 id="separating-workflow-control-from-agent-behavior">Separating workflow control from agent behavior</h2>
+<p>My current architecture separates the workflow engine, control plane, and package runner. Hatchet schedules durable executions. The Go control plane exposes commands and records execution state in PostgreSQL. Packages supply the behavior invoked at a workflow step. The engine and runner have separate interfaces, so a different scheduler or agent launcher can be introduced without changing the controller's policy. <span>Controller documentation <span class="muted">(local source; not public)</span></span></p>
+<p>A workflow consists of explicitly routed steps, grouped into stages. A stage can bound a review loop and require a human decision. Steps can execute sequentially or participate in a concurrent loop. The controller uses configured outcomes to select the next route; it does not infer that route from an agent's prose.</p>
+<p>That division gives each interface a narrower responsibility:</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
-<th>Evidence</th>
-<th>What it helps establish</th>
-<th>What remains open</th>
+<th>Boundary</th>
+<th>Contract</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>Build and static checks</td>
-<td>Basic consistency with configured rules</td>
-<td>Intended behavior</td>
+<td>Workflow to package</td>
+<td>Declared inputs, required outputs, and permitted outcome routes</td>
 </tr>
 <tr>
-<td>Unit and contract tests</td>
-<td>Specified behavior at selected boundaries</td>
-<td>Untested cases and combined changes</td>
+<td>Package to controller</td>
+<td>A structured result submitted by the active worker and accepted by the controller</td>
 </tr>
 <tr>
-<td>System and security checks</td>
-<td>Selected operational properties</td>
-<td>Conditions the checks don&#39;t model</td>
+<td>Agent to agent or human</td>
+<td>Addressed or broadcast messages through an inbox system</td>
 </tr>
 <tr>
-<td>Human review</td>
-<td>Interpretation and consequential tradeoffs</td>
-<td>Human mistakes and missing context</td>
-</tr>
-<tr>
-<td>Controlled production rollout</td>
-<td>Behavior under actual use</td>
-<td>Rare or delayed failures</td>
+<td>Candidate to acceptance</td>
+<td>Evidence from checks applicable to that candidate and its requirements</td>
 </tr>
 </tbody></table></div>
-<p>Use AI review as another source of feedback. It should not be the only evidence for a claim made by the generator, particularly when both use the same assumptions.</p>
-<p>SWE-bench evaluates patches against repository tests for issue-resolution tasks. It is a useful example of executable evaluation, with a boundary much narrower than a complete release decision. <a href="https://pli.princeton.edu/blog/2023/swe-bench-can-language-models-resolve-real-world-github-issues">Princeton&#39;s benchmark explanation</a></p>
-<h2>Design autonomy with recovery</h2>
-<p><img src="../assets/engineering-the-factory/images/controlled-rollout.png" alt="Candidates pass evidence and authorization gates before limited deployment, comparison, expansion, or recovery." loading="lazy"></p>
-<p><em>Proposed rollout workflow based on <a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SSDF</a> and <a href="https://sre.google/workbook/canarying-releases/">Google SRE</a>. Recovery depends on the change; rollback is not always sufficient.</em></p>
-<p><a href="../assets/engineering-the-factory/images/Figure%20sources.md">Figure sources and methodology</a></p>
-<p>Before expanding authority, define how the team will detect and recover from a bad result. A reversible configuration change can support a different policy from a destructive migration. Verify what rollback actually undoes, especially after database writes.</p>
-<p>Use progressive rollout where the service and its traffic allow it. Google&#39;s SRE workbook describes canarying as a limited deployment evaluated before wider release. That provides production evidence while reducing exposure; it does not eliminate deployment risk. <a href="https://sre.google/workbook/canarying-releases/">Canarying releases</a></p>
-<p>Permissions should match the task. Execution needs an identity and an audit trail. Enforce mandatory policy at the tool or deployment boundary, where the runtime can check the requested action.</p>
-<p>My current local runner also illustrates the gap between a desired control and an implemented one: it executes with the host user&#39;s permissions and is explicitly documented as not being a sandbox. A declared task boundary does not establish isolation. That limit belongs in the operating model and in any claims I make about the system. Current runner limits <span class="muted">(local source; not public)</span>.</p>
-<h2>Give humans a usable way to intervene</h2>
-<p>Give the person handling an escalation the unresolved question and the evidence needed to decide it. Include the failing check and attempted repairs with the current diff. A full transcript can remain available for investigation without being the only handoff.</p>
-<p>Bainbridge&#39;s <em>Ironies of Automation</em> warns that automation can leave operators with difficult abnormal conditions. Although it predates coding agents by decades, the concern applies when a workflow expects a person to rescue a failure they haven&#39;t been following. <a href="https://doi.org/10.1016/0005-1098%2883%2990046-8">Automatica</a></p>
-<p>Make it possible to stop work and inspect state. Keep the engineer&#39;s authority clear. A human approval step needs time and information to function.</p>
-<h2>Improve the system from its failures</h2>
-<p>Record execution costs and failures, including unsuccessful tasks. Measure time to an accepted change, review effort, and escaped defects. An impressive first-pass rate can hide a large cleanup burden if the acceptance checks are weak.</p>
-<p>When a failure recurs, decide whether the fix belongs in context, a tool, or a test. Keep a representative set of past tasks to check that the improvement helps without damaging other work. Evaluate changes to the factory itself before expanding their use.</p>
-<h2>Engineering at a higher level of abstraction</h2>
-<p>I am arguing for engineering the conditions that shape a whole class of implementations. Alongside code, that means specifications and tools, with execution boundaries and acceptance checks. When a failure recurs, investigate the production-system assumption or interface that allowed it through.</p>
-<p>That requires engineers to stay close enough to the code and operating environment to investigate failures. Delegation without that understanding makes the system harder to repair. Higher abstraction brings a wider responsibility for understanding how the layers interact.</p>
-<p>I want to test this direction through subsequent accepted changes. Do they become easier to specify and verify? What do maintenance and recovery cost? Additional autonomy is useful only if the surrounding system can support those outcomes.</p>
-<p>Broaden the workflow when evidence shows it handles the work and the team can recover from failures. I expect the project to change both that boundary and my recommendations. The next failed handoff may require another revision to this model.</p>
-<hr>
-<h3>Research and scope</h3>
-<p>The project observations above come from recorded evaluations and current repository documentation. They do not establish general reliability, productivity gains, or ROI. Other examples remain illustrative design proposals. Benchmarks and older automation research do not validate the factory as a whole. NIST version status reflects the earlier source review, not a new standards check for this revision. Project links point to local evidence and need publishable equivalents before external publication. See <a href="../assets/engineering-the-factory/References.md">References.md</a> for details.</p>
+<p>I created the inbox system with inspiration from the actor model. Agents can receive individually addressed messages or broadcasts, and humans can participate through the same communication mechanism. Message exchange supports coordination; a message does not substitute for a required result or decision.</p>
+<p>The completion boundary is concrete. A run step completes only when the controller accepts an MCP <code>step_result</code>. Process exit, an idle turn, and a chat message saying “done” cannot advance it. In the local runner, required file artifacts are collected and hashed, and the engine checks for their URIs and digests. Acceptance of that submission establishes a workflow outcome. Product acceptance still requires checks on the software. <span>Execution contract <span class="muted">(local source; not public)</span></span></p>
+<p>There are limits to the implementation. The execution contract identifies authenticated authority, atomicity between engine state and its database projection, and parts of recovery as design targets. A deterministic routing rule alone supplies none of those guarantees. Optional Git hooks in the Registry handle worktree preparation and stage commits as ordinary lifecycle operations. Keeping those operations in code makes their behavior inspectable without depending on an agent remembering to perform them. <span>Registry documentation <span class="muted">(local source; not public)</span></span></p>
+<h2 id="task-files-as-a-shared-execution-context">Task files as a shared execution context</h2>
+<p>I'm developing a “bag of data” or “bag of context” approach, currently represented as a volume. Specifications and plans move through the workflow alongside task instructions and review findings. These execution documents have a different lifecycle from the code the factory delivers.</p>
+<p>The design goal is to give each agent the location and access it needs deterministically, reducing dependence on a particular absolute path, URL, or filename embedded in the agent's behavior. A common location handles part of the handoff. The workflow still needs to identify which inputs govern a step and which outputs it requires.</p>
+<p>The current host implementation makes this distinction explicit. Execution documents live in an execution-specific files directory, separate from project source. Frozen copies of initial inputs are hashed. The runner supplies document paths, accepted prior results, and artifact locations. Retries retain the pinned files path. Agents receive assigned paths for required outputs, and the host collector checks containment and hashes the published bytes. These are documented host-file mechanisms; container volumes and remote artifact transport are separate capabilities. <span>Execution files and variables <span class="muted">(local source; not public)</span></span></p>
+<p>Sharing a directory also leaves semantic questions open. A reviewer must know whether a plan supersedes an earlier revision, and an executor needs a rule for resolving disagreement between the task contract and an older design document. A digest identifies bytes; deciding which bytes are authoritative requires workflow policy. Summaries need source references and a way to determine when they need refreshing.</p>
+<p>Research on context use gives me reasons to test that policy. Liu et al.'s <em>Lost in the Middle</em> found that performance on question answering and key-value retrieval depended on where relevant information appeared in the input. The models and tasks studied limit direct application to current coding agents. Gloaguen et al.'s evaluation of repository context files found no general improvement in task success and higher inference cost in its tested settings, while finding uses for instructions about nonstandard practices. For this factory, those results motivate comparing handoff content against a measured baseline. <a href="https://arxiv.org/abs/2307.03172">Lost in the Middle</a> · <a href="https://arxiv.org/abs/2602.11988">Evaluating AGENTS.md</a></p>
+<h2 id="a-task-contract-that-can-reject-plausible-code">A task contract that can reject plausible code</h2>
+<p>The GO-001 evaluation provides a bounded example. An existing Go HTTP service creates tasks with <code>POST /tasks</code> and retrieves them with <code>GET /tasks/{id}</code>. Storage lasts for the lifetime of one handler. The requested change adds optional <code>Idempotency-Key</code> support to task creation.</p>
+<p>The brief distinguishes several cases that could disappear in a summary:</p>
+<ul>
+<li>Without the header, every valid request creates a new task.</li>
+<li>A nonblank key is trimmed. The first valid request creates one task and returns <code>201</code>; an identical replay returns the same status and body.</li>
+<li>Reusing the key with different request bytes returns <code>409</code> without creating a task. Equivalent JSON with different byte representations still counts as a different request.</li>
+<li>A present but blank key returns <code>400</code>. An invalid task request must not reserve its key.</li>
+<li>Concurrent requests with the same key and body create exactly one task. Different bodies competing for that key produce one successful creation and conflicts for the other body.</li>
+</ul>
+<p>Existing endpoints, response shapes, and sequential IDs must remain intact. Persistence and authentication are outside the task. Changes to the Go version or dependencies require necessity and human approval. <span>GO-001 brief <span class="muted">(local source; not public)</span></span></p>
+<p>A plan can drop the absent-versus-blank distinction and still be internally consistent. Tests derived only from that plan can then agree with the implementation while missing the original requirement. The specification needs enough precision to give a reviewer grounds for rejecting such a candidate. Stable requirements can become contract tests, with their rationale retained alongside them.</p>
+<p>The November 14 architecture review illustrates a useful correction before implementation. It records seven findings as addressed, including preservation of strict JSON validation and creating an idempotency entry only when the header is present. It also corrects <code>go test taskapi_test.go</code> to <code>go test .</code>: the former invocation omitted source package definitions needed by the test file. The reviewer reported checking the corrected command against the source workspace. That establishes a design-stage observation; the later implementation needs its own evidence. <span>Architecture review <span class="muted">(local source; not public)</span></span></p>
+<h2 id="what-the-evaluation-records-establish">What the evaluation records establish</h2>
+<p>Three saved GO-001 runs expose different relationships between workflow completion and product verification. All three reached a completed workflow state.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Evaluation protocol</th>
+<th>Independent product result</th>
+<th align="right">Reported tokens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><span>November 1 <span class="muted">(local source; not public)</span></span></td>
+<td>Version 1, local grader</td>
+<td>Ten acceptance cases passed; <code>go vet</code> failed; overall fail</td>
+<td align="right">20,153,273</td>
+</tr>
+<tr>
+<td><span>November 7 <span class="muted">(local source; not public)</span></span></td>
+<td>Version 1, local grader</td>
+<td>Ten acceptance cases and <code>go vet</code> passed</td>
+<td align="right">5,042,751</td>
+</tr>
+<tr>
+<td><span>November 14 <span class="muted">(local source; not public)</span></span></td>
+<td>Version 2, public Factory interface</td>
+<td>Unavailable; no independent grading checks</td>
+<td align="right">7,970,186</td>
+</tr>
+</tbody></table></div>
+<p>On November 1, the saved vet diagnostic identified four uses of an API requiring Go 1.25 or later in a module declaring Go 1.22. The workflow had completed its review and approval path, but a separate check still rejected the candidate. Passing the behavioral cases had left a version constraint unsatisfied. <span>Saved vet diagnostic <span class="muted">(local source; not public)</span></span></p>
+<p>November 7 passed the recorded checks on another candidate. These are individual runs with different input variants, so the change in outcome does not isolate which design choice caused it. The historical grader ran on the host; neither it nor the agent runner was a security sandbox. The records do not establish that grader files were inaccessible to agents.</p>
+<p>November 14 changes the measurement boundary. Protocol 2 uses the public Factory interface and does not open the product workspace to compensate for missing interface capabilities. That interface did not expose the independent GO-001 acceptance operation, so the result records grading as unavailable. Reviewer reports remain attributed assessments. Treating this as a pass or failure, or pooling it with the locally graded runs, would misrepresent the evidence. <span>Evaluation protocol <span class="muted">(local source; not public)</span></span></p>
+<p>For the workflow, I need to specify where an acceptance check can veto completion and what route follows that veto. A repair produces a new candidate. Its checks must identify that revision, and earlier evidence must not silently satisfy obligations invalidated by the repair. An unavailable check leaves an obligation open even after every configured step has finished.</p>
+<h2 id="verification-and-recovery-beyond-a-completed-step">Verification and recovery beyond a completed step</h2>
+<p>Different checks answer different questions. A build establishes basic consistency under its toolchain; contract tests exercise selected behaviors. A security check covers the threats and conditions it actually models. Human review can resolve interpretation and tradeoffs while still missing a defect. AI review can contribute findings, but a generator and reviewer may share the assumption that caused an error.</p>
+<p>The research baselines are narrower than a software factory. Agentless uses a prescribed localization, repair, and validation process for issue repair. It gives me a simpler baseline against which to test elaborate orchestration. SWE-bench evaluates repository issue resolution through executable checks. Neither establishes that a candidate is ready for every operational consequence of delivery. <a href="https://arxiv.org/abs/2407.01489">Agentless</a> · <a href="https://pli.princeton.edu/blog/2023/swe-bench-can-language-models-resolve-real-world-github-issues">SWE-bench</a></p>
+<p>Recovery also needs a defined route. An infrastructure outage calls for a different response from a failed behavioral test or an ambiguous requirement. Retry limits need to bound repeated attempts, while a review requesting changes starts a new visit to the implementation step. Concurrent work still has dependencies: a consumer needs a published input before it can use it. Adding workers cannot resolve an undefined publication or compatibility sequence.</p>
+<p>Human intervention creates its own design obligation. An escalation should supply the failing check and candidate diff, with attempted repairs available for inspection. Otherwise the person must reconstruct the execution before deciding what to do. Bainbridge's <em>Ironies of Automation</em> describes the difficult abnormal conditions left to human operators. Its application here is conceptual; it did not study coding agents. <a href="https://doi.org/10.1016/0005-1098%2883%2990046-8">Ironies of Automation</a></p>
+<p>Delivery introduces further checks. For services that support it, a canary provides evidence under limited real traffic before exposure expands. Stop criteria and recovery procedures need to be defined for that change. Reverting a deployment may leave database writes behind. NIST SSDF version 1.1 supplies secure-development practices to consider across the lifecycle; using that guidance does not certify the factory. <a href="https://sre.google/workbook/canarying-releases/">Canarying releases</a> · <a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SP 800-218</a></p>
+<p>The local runner remains an important operating limit. It launches processes with the host user's permissions and is documented as not being a sandbox. A prompt restricting an agent to a checkout cannot enforce isolation. Mandatory access restrictions need enforcement by the runner or tool boundary. <span>Runner limits <span class="muted">(local source; not public)</span></span></p>
+<h2 id="measuring-the-abstraction">Measuring the abstraction</h2>
+<p>I want to find out whether the factory makes subsequent changes easier to specify, verify, and maintain, and whether it lets me take on more complicated work. The existing token counts cannot establish that. Input variants differ, protocol 2 lacks independent acceptance evidence, and all three runs leave total dollar cost unknown.</p>
+<p>The November 14 accounting combines input, cached reads, cached writes, and output. Applying one token price to the aggregate would produce a misleading bill. Even a complete model bill would omit specification and review time, repairs after failed checks, and maintenance of the factory. Failed tasks consume resources too, and escaped defects create costs after delivery. <span>November 14 accounting <span class="muted">(local source; not public)</span></span></p>
+<p>A useful next comparison would hold the task set and acceptance protocol fixed while changing one workflow choice, such as the context supplied at a boundary. Repeated runs would need to retain rejected candidates and their costs, along with accepted changes. Following the changes through maintenance would help test whether work was reduced or merely moved to review and recovery.</p>
+<p>The immediate engineering gap is more specific: a supported independent acceptance operation that identifies the candidate revision it checked. Until that interface exists, the November 14 protocol can report a completed workflow but cannot establish the product result.</p>
+<h3 id="research-and-scope">Research and scope</h3>
+<p>This is an ongoing engineering investigation. The common-volume design is still developing, and documentation distinguishes implemented host mechanisms from broader execution-contract targets. The evaluation records support the observations above; they do not establish general reliability, productivity gains, or ROI. No new factory run or product test was performed for this revision.</p>
+<p><a href="../assets/engineering-the-factory/References.md">References</a> records the evidence and source-review limits. <a href="../assets/engineering-the-factory/Supporting%20notes.md">Supporting notes</a> retain additional discussion and conceptual verification and rollout figures. Local project links need reviewed public equivalents before external publication.</p>
+
 </main><footer><span>© Jason Deutsch</span><a href="../index.html#newsletter">Occasional notes by email →</a><a href="https://www.linkedin.com/in/n3rdery/" rel="me">LinkedIn</a></footer></div></body></html>

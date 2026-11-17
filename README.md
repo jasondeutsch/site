@@ -1,34 +1,55 @@
 # Personal website
 
-A buildless, local-first website. All website source and content lives here.
+The Obsidian vault is the source of truth. Article Markdown is not copied into this repository. `content/articles.json` selects the articles and their publication dates:
 
-Preview from this directory:
-
-```sh
-python3 -m http.server 8000
+```json
+{
+  "slug": "engineering-the-factory",
+  "source": "../../writing/eng/posts/engineering the factory/Draft.md",
+  "date": "2026-10-01"
+}
 ```
 
-Open http://localhost:8000. No packages, external fonts, trackers, or build step are required.
+`source` is resolved relative to the repository root (`site/`), not the config file or current terminal directory. Absolute paths also work locally, but relative paths keep the configuration portable when the vault and website move together. All four current articles are registered in the JSON file. The slug preserves each article URL. Dates are explicit and independent of file timestamps.
 
-- `index.html`: homepage
-- `styles.css`: shared responsive styles
-- `articles/`: readable HTML articles
-- `content/`: copied Markdown source from the vault
+## Build from the vault
 
-The sample article is copied verbatim from `writing/eng/posts/ai induced velocity trap/Draft.md` in the Obsidian vault and marked as a draft. The vault original is unchanged. HTML is a static rendering; later Markdown edits must be reflected in the article HTML.
+Requires Node.js 22 or newer. From `site/`:
 
-Before publishing, review the draft, review the résumé-based biography, add a contact address, and confirm your Mailchimp audience and opt-in settings. Both signup forms submit directly to Mailchimp using the supplied embedded-form endpoint and its bot-trap field. This site has not been deployed.
+```sh
+npm ci --ignore-scripts
+npm run build
+```
 
-## GitHub Pages
+The build reads each configured draft directly, generates `articles/*.html`, refreshes the homepage titles and dates, and copies referenced images and supporting files into `assets/<slug>/`. Companion `examples/` directories are copied so README links and downloadable source remain usable. Original vault files are never edited.
 
-This site works as a static GitHub Pages site, including at a project URL such as `https://USERNAME.github.io/REPOSITORY/`. All internal URLs are relative, including article stylesheets and the portrait.
+Source-relative links are resolved from the draft's directory. Legacy `writing/…` links resolve from the vault root. Private absolute citations are displayed as “local source; not public” rather than published as broken links. Missing source files or referenced assets stop the build.
 
-The Git repository is rooted in this `site/` directory. The deployment workflow is `.github/workflows/pages.yml` inside it and publishes the repository root. No build or Jekyll processing is needed. The older workflow in the parent directory is outside this Git repository and is not used.
+The article template is `templates/article.html`. Markdown headings, lists, tables, fenced code, and details are rendered with Marked. LaTeX equations render to native MathML with KaTeX at build time. Context Article 00 keeps its contents before the introduction and definitions after it.
 
-For the custom domain, set **Settings → Pages → Custom domain** to `jasondeutsch.com`. The homepage should then be `https://jasondeutsch.com/`, without `/site/`. The tracked `CNAME` also preserves this domain when publishing directly from a branch; Actions deployments use the repository’s Pages settings.
-1. Push this project to a GitHub repository.
-2. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the source.
-3. Under **Actions**, run **Publish website to GitHub Pages** on the default branch, or push a change on that branch.
-4. The completed deployment shows the published URL in the `github-pages` environment.
+```sh
+npm run render   # regenerate tracked HTML/assets and build record
+npm run check    # compare rendered content/assets with the live vault drafts
+npm test         # regression tests
+npm run build    # render locally and prepare dist/
+npm run package  # verify and package generated files without reading the vault
+python3 -m http.server 8000 --directory dist
+```
 
-Only the default branch can deploy. Subsequent changes trigger deployment automatically. Newsletter signup uses a standard HTML POST to Mailchimp, so it works on GitHub Pages without a backend or API key. Mailchimp handles signup responses in a new tab. Double opt-in must be configured in Mailchimp; it cannot be determined from the embed code.
+Open http://localhost:8000 to preview the build. `npm run check` detects changes to the external drafts, titles, or assets. Run it locally where the vault exists.
+
+## Publish
+
+After editing a vault draft:
+
+1. Run `npm run build` locally.
+2. Review and commit the generated HTML/assets, homepage, `render-state.json`, and any config changes.
+3. Push to the default branch.
+
+GitHub cannot access your local vault. The workflow installs pinned dependencies, runs fixture-based tests, then runs **npm run package**, which verifies the hashes in `render-state.json` and uploads `dist/`. It does not try to render from unavailable local paths. Changes to configuration, templates, CSS, generated pages, or assets without a corresponding local build fail packaging.
+
+A vault-only edit cannot trigger GitHub Actions: you must run the local build and commit its output. `render-state.json` verifies committed build inputs/output; it cannot tell GitHub that an inaccessible vault file has changed.
+
+Select **GitHub Actions** under **Settings → Pages**, with custom domain `jasondeutsch.com`. The repository root is `site/`; the parent workspace's `.github/` is outside this repository.
+
+Only static website files are uploaded. The JSON configuration, build scripts, build record, dependencies, and Git metadata stay out of the deployed site. Newsletter signup submits directly to Mailchimp; professional inquiries open a prepared message in the visitor's email app.

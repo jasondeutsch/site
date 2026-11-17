@@ -1,0 +1,30 @@
+[
+  {
+    "slug": "gen-ai-arch-01",
+    "date": "2026-11-16",
+    "contents": true,
+    "introduction": true,
+    "source": "../../writing/eng/posts/agentic and generative ai architectures/00 the-architecture-of-a-generative-ai-application/Draft.md"
+  },
+  {
+    "slug": "context-engineering-foundations",
+    "date": "2026-11-02",
+    "contents": true,
+    "source": "../../writing/eng/posts/context engineering deep dive/00 introduction to context engineering/Draft.md"
+  },
+  {
+    "slug": "functional-programming-and-agents",
+    "date": "2026-10-18",
+    "source": "../../writing/eng/posts/functional programming and agents/Draft.md"
+  },
+  {
+    "slug": "engineering-the-factory",
+    "date": "2026-10-01",
+    "source": "../../writing/eng/posts/engineering the factory/Draft.md"
+  },
+  {
+    "slug": "ralph-loops",
+    "date": "2026-09-17",
+    "source": "../../writing/eng/posts/ralph loop deep dive/Draft.md"
+  }
+]

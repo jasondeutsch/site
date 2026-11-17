@@ -1,0 +1,75 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>The architecture of a generative AI application — Jason Deutsch</title><link rel="stylesheet" href="../styles.css?v=8d2e1b60face"></head><body><a class="skip" href="#main">Skip to content</a><div class="shell"><main id="main" class="article"><a class="back" href="../index.html#writing">← All writing</a><h1>The architecture of a generative AI application</h1><div class="meta">Jason Deutsch · <time datetime="2026-11-16">November 16, 2026</time></div>
+<nav class="article-toc" aria-label="Table of contents"><h2>Contents</h2><ol><li><a href="#introduction">Introduction</a></li><li><a href="#the-unit-of-design-is-the-application">The unit of design is the application</a></li><li><a href="#several-kinds-of-correctness-coexist">Several kinds of correctness coexist</a></li><li><a href="#generative-applications-do-not-require-autonomous-control">Generative applications do not require autonomous control</a></li><li><a href="#the-questions-i-m-working-through">The questions I’m working through</a></li><li><a href="#begin-with-a-request-trace">Begin with a request trace</a></li><li><a href="#references">References</a></li></ol></nav><h2 id="introduction">Introduction</h2>
+<p><em>Agentic and generative AI application architectures · Part 1</em></p>
+<p>Suppose a support assistant answers a refund question correctly, then refunds the wrong order. Its answer was accurate; its action was wrong. The application accepted a generated identifier without checking that the customer could refund that order.</p>
+<p>This series follows the decisions around that action: which evidence reaches the model, what its output can change, and how the application records the result. A better model may make fewer mistakes. The application still has to authorize the refund and record whether it happened.</p>
+<h2 id="the-unit-of-design-is-the-application">The unit of design is the application</h2>
+<p>Berkeley’s compound-systems framing treats interacting models, retrieval, and tools as a design object. It is a useful starting point for reasoning beyond a single inference call. <a href="https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/">Berkeley AI Research: The Shift from Models to Compound AI Systems</a></p>
+<p>Consider the following proposed reference architecture. The arrows indicate responsibility transfers, not an implementation tied to one framework.</p>
+<pre><code class="language-mermaid">flowchart LR
+  U[User or event] --&gt; A[Application API]
+  A --&gt; R[Run coordinator]
+  R --&gt; C[Context assembly]
+  C --&gt; M[Model gateway]
+  M --&gt; V[Output validation]
+  V --&gt; P[Policy and action boundary]
+  P --&gt; T[Tools and business services]
+  T --&gt; R
+  D[Evidence and state stores] --&gt; C
+  R --&gt; D
+  R --&gt; O[Telemetry and evaluation records]
+</code></pre>
+<p>The application API authenticates the request and identifies the task. The coordinator tracks progress and decides when work must stop. Context assembly supplies evidence and current state; the gateway provides inference access. Validation checks the result against a contract before the action boundary permits an operation. The business service enforces its own invariants throughout.</p>
+<p>Start with these components as modules in one process. Separate boxes make responsibilities easier to discuss, but each service adds operational work. Extract one when requirements for scaling or isolation justify the boundary, or when independent ownership and release cycles require it.</p>
+<h2 id="several-kinds-of-correctness-coexist">Several kinds of correctness coexist</h2>
+<p>A generated answer can be readable yet unsupported. A tool call can satisfy its JSON schema yet target the wrong resource. An authorized operation can execute twice. A completed job can produce an artifact the user cannot retrieve.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Evidence required</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Is the response supported?</td>
+<td>Claim-to-source relationships and source validity</td>
+</tr>
+<tr>
+<td>Is the requested action allowed?</td>
+<td>Current identity, policy, resource, and action parameters</td>
+</tr>
+<tr>
+<td>Did the external effect occur?</td>
+<td>Receipt, status query, or reconciled business state</td>
+</tr>
+<tr>
+<td>Did the user’s task succeed?</td>
+<td>Task-specific postconditions, including prohibited changes</td>
+</tr>
+<tr>
+<td>Can the service continue operating?</td>
+<td>Capacity, failure isolation, recovery, and cost indicators</td>
+</tr>
+</tbody></table></div>
+<p>Assign an owner to each check. The model can report confidence, but that report establishes none of the conditions in the table.</p>
+<h2 id="generative-applications-do-not-require-autonomous-control">Generative applications do not require autonomous control</h2>
+<p>A document extractor may use one model call and deterministic validation. A knowledge assistant may retrieve, generate, and verify an answer through a fixed path. An agent lets model outputs influence the next operation in a loop. Multiple agents introduce additional coordination and resource decisions.</p>
+<p>Anthropic distinguishes workflows and agents by who controls the next operation. <a href="https://www.anthropic.com/research/building-effective-agents">Anthropic: Building effective agents</a> A chat interface can front a deterministic workflow; a background process can be highly autonomous.</p>
+<p>Make the business process explicit first. Let the model exercise judgment where the task requires interpretation, while application code enforces permissions around money and credentials. Apply the same discipline to destructive changes and persistent state.</p>
+<h2 id="the-questions-i-m-working-through">The questions I’m working through</h2>
+<p>I’m writing these articles over time to work through the architecture of generative and agentic applications. I’ll draw on corporate engineering accounts and research papers, comparing the decisions behind them rather than presenting a single preferred stack.</p>
+<p>Some questions are easier to examine through a complete application. I’ll use hypothetical knowledge assistants, support services, and research agents to connect the components. Voice and document-processing examples bring different timing and evidence constraints into the discussion.</p>
+<p>The thread running through the articles is how a design holds up under its actual workload: where evidence comes from, who can authorize an action, and what survives a failure. Those questions should remain answerable when the model or framework changes.</p>
+<p>Uber’s model gateway and LinkedIn’s agent-stack account provide two different industry entry points into shared application infrastructure. Neither should be copied without examining the surrounding requirements. <a href="https://www.uber.com/us/en/blog/genai-gateway/">Uber Engineering: Navigating the LLM Landscape: Uber’s Innovation with GenAI Gateway</a> <a href="https://www.linkedin.com/blog/engineering/generative-ai/the-linkedin-generative-ai-application-tech-stack-extending-to-build-ai-agents">LinkedIn Engineering: The LinkedIn Generative AI Application Tech Stack: Extending to Build AI Agents</a></p>
+<h2 id="begin-with-a-request-trace">Begin with a request trace</h2>
+<p>Before selecting a framework, trace one request from identity to final outcome. Mark every point where information changes representation, a decision gains authority, or an external effect becomes possible. For each transition, write down the owner, validation rule, timeout, and retained evidence.</p>
+<p>For the refund assistant, this trace must show where a suggestion becomes permission to move money. Locate that transition before allowing the prototype to issue its first refund.</p>
+<h2 id="references">References</h2>
+<ul>
+<li><a href="https://bair.berkeley.edu/blog/2024/02/18/compound-ai-systems/">The Shift from Models to Compound AI Systems</a>, Berkeley AI Research. Academic engineering perspective. System-level composition. Conceptual perspective rather than universal experimental proof.</li>
+<li><a href="https://www.anthropic.com/research/building-effective-agents">Building effective agents</a>, Anthropic. Engineering account. Control-flow patterns and autonomy choices. Qualitative design guidance; does not validate every workflow or current API.</li>
+<li><a href="https://www.uber.com/us/en/blog/genai-gateway/">Navigating the LLM Landscape: Uber’s Innovation with GenAI Gateway</a>, Uber Engineering. Production engineering account. Shared model access and platform boundaries. One organization’s architecture; historical implementation.</li>
+<li><a href="https://www.linkedin.com/blog/engineering/generative-ai/the-linkedin-generative-ai-application-tech-stack-extending-to-build-ai-agents">The LinkedIn Generative AI Application Tech Stack: Extending to Build AI Agents</a>, LinkedIn Engineering. Engineering account. Application stack and agent platform integration. Platform account; detailed deployment guarantees require implementation-specific verification.</li>
+</ul>
+
+</main><footer><span>© Jason Deutsch</span><a href="../index.html#newsletter">Occasional notes by email →</a><a href="https://www.linkedin.com/in/n3rdery/" rel="me">LinkedIn</a></footer></div></body></html>

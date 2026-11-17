@@ -28,12 +28,23 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned build dependencies
+        run: npm ci --ignore-scripts
+      - name: Test renderer
+        run: npm test
+      - name: Verify and package locally rendered website
+        run: npm run package
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static website
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: dist
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
